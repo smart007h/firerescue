@@ -23,6 +23,13 @@ import * as Location from 'expo-location';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import 'react-native-get-random-values';
 import { debounce } from 'lodash';
+import MapView, { Marker } from 'react-native-maps';
+import {
+  getCurrentLocation,
+  getAddressFromCoordinates,
+  searchLocationByAddress,
+  calculateDistance
+} from '../services/locationService';
 
 const INCIDENT_TYPES = [
   'Fire',
@@ -57,10 +64,14 @@ export default function ReportIncidentScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestedLocations, setSuggestedLocations] = useState([]);
   const [manualLocation, setManualLocation] = useState('');
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [placeSuggestions, setPlaceSuggestions] = useState([]);
+  const [showPlaceSuggestions, setShowPlaceSuggestions] = useState(false);
 
   // Memoize the Google Places Autocomplete query
   const googlePlacesQuery = React.useMemo(() => ({
-    key: 'AIzaSyC_CmB_EEAwueHYtPM4uAICHok5XUaYR-8',
+    key: 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E',
     language: 'en',
     components: 'country:gh',
     types: '(cities)',  // Limit to cities for faster results
@@ -69,6 +80,66 @@ export default function ReportIncidentScreen() {
   // Debounce the location search
   const debouncedSearchLocations = React.useCallback(
     debounce((place) => searchLocations(place), 300),
+    []
+  );
+
+  // Debounce manual location suggestions
+  const debouncedLocationSuggestions = React.useCallback(
+    debounce(async (query) => {
+      if (query.length < 3) {
+        setLocationSuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&key=${googlePlacesQuery.key}&components=country:gh&types=geocode`
+        );
+        
+        const data = await response.json();
+        
+        if (data.status === 'OK' && data.predictions) {
+          setLocationSuggestions(data.predictions.slice(0, 5)); // Limit to 5 suggestions
+          setShowSuggestions(true);
+        } else {
+          setLocationSuggestions([]);
+          setShowSuggestions(false);
+        }
+      } catch (error) {
+        console.error('Error fetching location suggestions:', error);
+        setLocationSuggestions([]);
+        setShowSuggestions(false);
+      }
+    }, 500),
+    [googlePlacesQuery.key]
+  );
+
+  // Debounced function to fetch Google Places suggestions
+  const fetchPlaceSuggestions = React.useCallback(
+    debounce(async (input) => {
+      if (!input || input.length < 3) {
+        setPlaceSuggestions([]);
+        setShowPlaceSuggestions(false);
+        return;
+      }
+      try {
+        const apiKey = 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E';
+        const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${apiKey}&components=country:gh`;
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data.status === 'OK' && data.predictions) {
+          setPlaceSuggestions(data.predictions.slice(0, 5));
+          setShowPlaceSuggestions(true);
+        } else {
+          setPlaceSuggestions([]);
+          setShowPlaceSuggestions(false);
+        }
+      } catch (error) {
+        setPlaceSuggestions([]);
+        setShowPlaceSuggestions(false);
+      }
+    }, 400),
     []
   );
 
@@ -158,6 +229,22 @@ export default function ReportIncidentScreen() {
     }
   };
 
+  const getAddressFromGoogle = async (latitude, longitude) => {
+    const apiKey = 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E';
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`;
+    try {
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.status === 'OK' && data.results.length > 0) {
+        return data.results[0].formatted_address;
+      }
+      return 'Location selected';
+    } catch (error) {
+      console.error('Google Geocoding API error:', error);
+      return 'Location selected';
+    }
+  };
+
   const getCurrentLocation = async () => {
     try {
       console.log('Getting current location...');
@@ -170,34 +257,29 @@ export default function ReportIncidentScreen() {
         throw new Error('Location permission denied');
       }
 
-      // Get location with timeout
-      const locationPromise = Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced
-      });
-
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Location request timed out')), LOCATION_TIMEOUT)
-      );
-
-      const location = await Promise.race([locationPromise, timeoutPromise]);
+      let location;
+      try {
+        console.log('Attempting to get location with high accuracy...');
+        // Try to get a high-accuracy location first
+        location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+          timeout: 15000, // 15-second timeout for high accuracy
+        });
+      } catch (highAccuracyError) {
+        console.warn('High accuracy location failed, trying with lower accuracy:', highAccuracyError.message);
+        // If high accuracy fails or times out, try a less accurate but faster method
+        location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          timeout: 20000, // 20-second timeout for balanced accuracy
+        });
+      }
       
       if (!location || !location.coords) {
-        throw new Error('Invalid location data');
+        throw new Error('Could not retrieve location. Please ensure GPS is enabled and has a clear signal.');
       }
 
-      // Get address first
-      const [address] = await Location.reverseGeocodeAsync({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      });
-
-      // Format the address with all available components
-      const formattedAddress = [
-        address?.street,
-        address?.city,
-        address?.region,
-        address?.country
-      ].filter(Boolean).join(', ');
+      // Get address using Google Geocoding API
+      const formattedAddress = await getAddressFromGoogle(location.coords.latitude, location.coords.longitude);
 
       // Update state with both location and address
       setFormData(prev => ({
@@ -216,10 +298,10 @@ export default function ReportIncidentScreen() {
       setLocationAddress(formattedAddress || 'Location selected');
 
       // Find nearest station
-      await findNearestStation(location.coords.latitude, location.coords.longitude);
+      await findNearestStationLocal(location.coords.latitude, location.coords.longitude);
 
       setShowLocationModal(false);
-      Alert.alert('Success', 'Location has been set');
+      Alert.alert('Success', 'Current location has been set');
     } catch (error) {
       console.error('Location error:', error);
       Alert.alert(
@@ -239,23 +321,10 @@ export default function ReportIncidentScreen() {
         throw new Error('Invalid location data received');
       }
 
-      // Get the address for the current location
+      // Get the address for the current location using Google Geocoding API
       console.log('Getting address for location...');
-      const [address] = await Location.reverseGeocodeAsync({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      });
-      console.log('Received address:', address);
-
-      // Format the address with all available components
-      const formattedAddress = [
-        address?.street,
-        address?.city,
-        address?.region,
-        address?.country
-      ].filter(Boolean).join(', ');
-
-      console.log('Formatted address:', formattedAddress);
+      const formattedAddress = await getAddressFromGoogle(location.coords.latitude, location.coords.longitude);
+      console.log('Received address:', formattedAddress);
 
       setFormData({
         ...formData,
@@ -272,7 +341,7 @@ export default function ReportIncidentScreen() {
 
       // Find nearest station
       console.log('Finding nearest station...');
-      await findNearestStation(location.coords.latitude, location.coords.longitude);
+      await findNearestStationLocal(location.coords.latitude, location.coords.longitude);
       
       setShowLocationModal(false);
       Alert.alert('Success', 'Current location has been set.');
@@ -282,7 +351,7 @@ export default function ReportIncidentScreen() {
     }
   };
 
-  const findNearestStation = async (latitude, longitude) => {
+  const findNearestStationLocal = async (latitude, longitude) => {
     try {
       // Get all active stations
       const { data: stations, error } = await supabase
@@ -387,19 +456,22 @@ export default function ReportIncidentScreen() {
     }
 
     try {
+      // Request permissions before getting location and reverse geocoding
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setError('Location permission denied. Please enable location permissions in settings.');
+        return;
+      }
       const location = await Location.getCurrentPositionAsync({});
       const { latitude, longitude } = location.coords;
-      
       // Get address from coordinates using reverse geocoding
       const [address] = await Location.reverseGeocodeAsync({
         latitude,
         longitude,
       });
-
       const locationString = address 
         ? `${address.street || ''} ${address.city || ''} ${address.region || ''} ${address.country || ''}`
         : `${latitude}, ${longitude}`;
-
       setFormData({
         ...formData,
         location: {
@@ -410,10 +482,48 @@ export default function ReportIncidentScreen() {
       });
     } catch (error) {
       setError('Error getting location. Please enter manually.');
+      console.error('Error getting address from coordinates:', error);
     }
   };
 
   const handleImageUpload = async () => {
+    try {
+      // Show options to the user: Take Photo or Choose from Gallery
+      Alert.alert(
+        'Add Image',
+        'Choose an option',
+        [
+          {
+            text: 'Take Photo',
+            onPress: async () => {
+              try {
+                const cameraResult = await ImagePicker.launchCameraAsync({
+                  mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                  allowsEditing: true,
+                  quality: 0.8,
+                  base64: true
+                });
+                if (!cameraResult.canceled) {
+                  const asset = cameraResult.assets[0];
+                  setFormData(prev => ({
+                    ...prev,
+                    images: [...prev.images, {
+                      uri: asset.uri,
+                      type: 'image',
+                      mimeType: asset.mimeType || 'image/jpeg',
+                      base64: asset.base64
+                    }]
+                  }));
+                }
+              } catch (error) {
+                console.error('Error capturing image:', error);
+                Alert.alert('Error', 'Error capturing image. Please try again.');
+              }
+            }
+          },
+          {
+            text: 'Choose from Gallery',
+            onPress: async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -421,12 +531,8 @@ export default function ReportIncidentScreen() {
         quality: 0.8,
         base64: true
       });
-
       if (!result.canceled) {
         const asset = result.assets[0];
-        console.log('Selected image:', asset); // Debug log
-
-        // Store the image data directly without converting to blob
         setFormData(prev => ({
           ...prev,
           images: [...prev.images, {
@@ -436,26 +542,66 @@ export default function ReportIncidentScreen() {
             base64: asset.base64
           }]
         }));
-        Alert.alert('Success', 'Image added successfully');
       }
     } catch (error) {
       console.error('Error selecting image:', error);
       Alert.alert('Error', 'Error selecting image. Please try again.');
+              }
+            }
+          },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
+    } catch (error) {
+      console.error('Error showing image picker options:', error);
+      Alert.alert('Error', 'Error showing image picker options. Please try again.');
     }
   };
 
   const handleVideoUpload = async () => {
+    try {
+      // Show options to the user: Record Video or Choose from Gallery
+      Alert.alert(
+        'Add Video',
+        'Choose an option',
+        [
+          {
+            text: 'Record Video',
+            onPress: async () => {
+              try {
+                const cameraResult = await ImagePicker.launchCameraAsync({
+                  mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+                  allowsEditing: true,
+                  quality: 1,
+                });
+                if (!cameraResult.canceled) {
+                  const asset = cameraResult.assets[0];
+                  setFormData(prev => ({
+                    ...prev,
+                    videos: [...prev.videos, {
+                      uri: asset.uri,
+                      type: 'video',
+                      mimeType: asset.mimeType || 'video/mp4'
+                    }]
+                  }));
+                }
+              } catch (error) {
+                console.error('Error recording video:', error);
+                Alert.alert('Error', 'Error recording video. Please try again.');
+              }
+            }
+          },
+          {
+            text: 'Choose from Gallery',
+            onPress: async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Videos,
         allowsEditing: true,
         quality: 1,
       });
-
       if (!result.canceled) {
         const asset = result.assets[0];
-        console.log('Selected video:', asset); // Debug log
-
         setFormData(prev => ({
           ...prev,
           videos: [...prev.videos, {
@@ -464,11 +610,19 @@ export default function ReportIncidentScreen() {
             mimeType: asset.mimeType || 'video/mp4'
           }]
         }));
-        Alert.alert('Success', 'Video added successfully');
       }
     } catch (error) {
       console.error('Error selecting video:', error);
       Alert.alert('Error', 'Error selecting video. Please try again.');
+              }
+            }
+          },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
+    } catch (error) {
+      console.error('Error showing video picker options:', error);
+      Alert.alert('Error', 'Error showing video picker options. Please try again.');
     }
   };
 
@@ -698,7 +852,7 @@ export default function ReportIncidentScreen() {
       setLocationAddress(displayAddress);
 
       // Find the nearest station
-      await findNearestStation(location.latitude, location.longitude);
+      await findNearestStationLocal(location.latitude, location.longitude);
 
       // Close the modal and show success
       setShowLocationModal(false);
@@ -723,7 +877,7 @@ export default function ReportIncidentScreen() {
         },
       });
       setLocationAddress(location.address);
-      findNearestStation(location.latitude, location.longitude);
+      findNearestStationLocal(location.latitude, location.longitude);
       setShowLocationModal(false);
       setSuggestedLocations([]);
     } catch (error) {
@@ -852,16 +1006,74 @@ export default function ReportIncidentScreen() {
         >
           {locationAddress ? (
             <View style={styles.selectedLocation}>
-              <Ionicons name="location" size={20} color="#DC3545" />
-              <Text style={styles.selectedLocationText}>{locationAddress}</Text>
+              <View style={styles.locationIconContainer}>
+                <Ionicons name="location" size={20} color="#DC3545" />
+              </View>
+              <View style={styles.locationDetails}>
+                <Text style={styles.selectedLocationText} numberOfLines={2}>
+                  {locationAddress}
+                </Text>
+                {nearestStation && (
+                  <Text style={styles.nearestStationText}>
+                    Nearest: {nearestStation.station_name}
+                  </Text>
+                )}
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#666" />
             </View>
           ) : (
             <View style={styles.selectLocation}>
-              <Ionicons name="location-outline" size={20} color="#666" />
-              <Text style={styles.selectLocationText}>Select Location</Text>
+              <View style={styles.locationIconContainer}>
+                <Ionicons name="location-outline" size={20} color="#666" />
+              </View>
+              <View style={styles.selectLocationText}>
+                <Text style={styles.selectLocationTitle}>Select Location</Text>
+                <Text style={styles.selectLocationSubtitle}>Tap to choose location or use GPS</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#666" />
             </View>
           )}
         </TouchableOpacity>
+        
+        {/* Quick Current Location Button */}
+        {!locationAddress && (
+          <TouchableOpacity
+            style={styles.quickLocationButton}
+            onPress={getCurrentLocation}
+            disabled={loading}
+          >
+            <Ionicons name="location" size={16} color="#DC3545" />
+            <Text style={styles.quickLocationText}>Use Current Location</Text>
+            {loading && <ActivityIndicator size="small" color="#DC3545" />}
+          </TouchableOpacity>
+        )}
+        
+        {/* Map Preview */}
+        {formData.location && (
+          <View style={styles.mapPreviewContainer}>
+            <MapView
+              style={styles.mapPreview}
+              region={{
+                latitude: formData.location.latitude,
+                longitude: formData.location.longitude,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+              }}
+              scrollEnabled={false}
+              zoomEnabled={false}
+              rotateEnabled={false}
+              pitchEnabled={false}
+            >
+              <Marker
+                coordinate={{
+                  latitude: formData.location.latitude,
+                  longitude: formData.location.longitude,
+                }}
+                pinColor="red"
+              />
+            </MapView>
+          </View>
+        )}
       </View>,
       <View key="description" style={styles.formContainer}>
         <Text style={styles.label}>Description *</Text>
@@ -944,122 +1156,90 @@ export default function ReportIncidentScreen() {
         return;
       }
 
-      // Format the search query for Ghana
-      const searchQuery = manualLocation.toLowerCase().includes('ghana') 
-        ? manualLocation 
-        : `${manualLocation}, Ghana`;
+      setLoading(true);
 
-      console.log('Searching for location:', searchQuery);
+      // Use the location service to search for the location
+      const locationData = await searchLocationByAddress(manualLocation);
 
-      // First try with region restriction
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(searchQuery)}&key=${googlePlacesQuery.key}&region=gh`
-      );
-      
-      const data = await response.json();
-      console.log('Geocoding response:', data);
+      console.log('Found location:', locationData);
 
-      if (data.status === 'OK' && data.results && data.results.length > 0) {
-        const location = data.results[0].geometry.location;
-        const formattedAddress = data.results[0].formatted_address;
-
-        console.log('Found location:', {
-          address: formattedAddress,
-          coordinates: location
-        });
-
-        // Update form data with the location
-        setFormData(prev => ({
-          ...prev,
-          location: {
-            latitude: location.lat,
-            longitude: location.lng
-          },
-          coordinates: {
-            latitude: location.lat,
-            longitude: location.lng
-          }
-        }));
-        
-        setLocationAddress(formattedAddress);
-        
-        // Find nearest station using actual coordinates
-        await findNearestStation(location.lat, location.lng);
-        
-        setShowLocationModal(false);
-        setManualLocation('');
-      } else if (data.status === 'ZERO_RESULTS') {
-        // If no results with region restriction, try without it
-        console.log('No results with region restriction, trying without...');
-        
-        const responseWithoutRegion = await fetch(
-          `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(searchQuery)}&key=${googlePlacesQuery.key}`
-        );
-        
-        const dataWithoutRegion = await responseWithoutRegion.json();
-        console.log('Geocoding response without region:', dataWithoutRegion);
-
-        if (dataWithoutRegion.status === 'OK' && dataWithoutRegion.results && dataWithoutRegion.results.length > 0) {
-          const location = dataWithoutRegion.results[0].geometry.location;
-          const formattedAddress = dataWithoutRegion.results[0].formatted_address;
-
-          console.log('Found location without region:', {
-            address: formattedAddress,
-            coordinates: location
-          });
-
-          // Update form data with the location
-          setFormData(prev => ({
-            ...prev,
-            location: {
-              latitude: location.lat,
-              longitude: location.lng
-            },
-            coordinates: {
-              latitude: location.lat,
-              longitude: location.lng
-            }
-          }));
-          
-          setLocationAddress(formattedAddress);
-          
-          // Find nearest station using actual coordinates
-          await findNearestStation(location.lat, location.lng);
-          
-          setShowLocationModal(false);
-          setManualLocation('');
-        } else {
-          console.error('Location search failed:', dataWithoutRegion);
-          Alert.alert(
-            'Location Not Found',
-            'Could not find the location. Please try:\n\n' +
-            '1. Using a more specific address\n' +
-            '2. Including the city/region (e.g., "Kotei, Kumasi")\n' +
-            '3. Using a nearby landmark or major street\n\n' +
-            'Error: ' + (dataWithoutRegion.status || 'Unknown error'),
-            [{ text: 'OK', onPress: () => {} }]
-          );
+      // Update form data with the location
+      setFormData(prev => ({
+        ...prev,
+        location: {
+          latitude: locationData.latitude,
+          longitude: locationData.longitude
+        },
+        coordinates: {
+          latitude: locationData.latitude,
+          longitude: locationData.longitude
         }
-      } else {
-        console.error('Location search failed:', data);
-        Alert.alert(
-          'Location Not Found',
-          'Could not find the location. Please try:\n\n' +
-          '1. Using a more specific address\n' +
-          '2. Including the city/region (e.g., "Kotei, Kumasi")\n' +
-          '3. Using a nearby landmark or major street\n\n' +
-          'Error: ' + (data.status || 'Unknown error'),
-          [{ text: 'OK', onPress: () => {} }]
-        );
-      }
+      }));
+      
+      setLocationAddress(locationData.address);
+      
+      // Find nearest station using actual coordinates
+      const nearest = await findNearestStationLocal(locationData.latitude, locationData.longitude);
+      setNearestStation(nearest);
+      
+      setShowLocationModal(false);
+      setManualLocation('');
+      Alert.alert('Success', 'Location has been set.');
     } catch (error) {
       console.error('Error setting manual location:', error);
       Alert.alert(
-        'Error',
-        'Failed to process location. Please try again with a different address format.\n\n' +
-        'Error details: ' + error.message,
+        'Location Not Found',
+        'Could not find the location. Please try:\n\n' +
+        '1. Using a more specific address\n' +
+        '2. Including the city/region (e.g., "Kotei, Kumasi")\n' +
+        '3. Using a nearby landmark or major street\n\n' +
+        'Error: ' + error.message,
         [{ text: 'OK', onPress: () => {} }]
       );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle manual location input changes
+  const handleManualLocationChange = (text) => {
+    setManualLocation(text);
+    fetchPlaceSuggestions(text);
+  };
+
+  // Handle suggestion tap
+  const handlePlaceSuggestionSelect = async (suggestion) => {
+      setManualLocation(suggestion.description);
+    setShowPlaceSuggestions(false);
+    setLoading(true);
+    try {
+      const apiKey = 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E';
+      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${suggestion.place_id}&key=${apiKey}&fields=geometry,formatted_address`;
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.status === 'OK' && data.result) {
+        const loc = data.result.geometry.location;
+        const formattedAddress = data.result.formatted_address;
+        setFormData(prev => ({
+          ...prev,
+          location: {
+            latitude: loc.lat,
+            longitude: loc.lng
+          },
+          coordinates: {
+            latitude: loc.lat,
+            longitude: loc.lng
+          }
+        }));
+        setLocationAddress(formattedAddress);
+        await findNearestStationLocal(loc.lat, loc.lng);
+        setShowLocationModal(false);
+        setManualLocation('');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to set location. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1097,33 +1277,167 @@ export default function ReportIncidentScreen() {
         transparent={true}
       >
         <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Enter Location</Text>
+          <View style={styles.modalContentUber}>
+            <View style={styles.modalHeaderUber}>
+              <Text style={styles.modalTitleUber}>Set Pickup Location</Text>
               <TouchableOpacity onPress={() => setShowLocationModal(false)}>
                 <Ionicons name="close" size={24} color="#333" />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.locationOptions}>
-              <View style={styles.searchContainer}>
-                <Text style={styles.label}>Location Details</Text>
-                <TextInput
-                  style={styles.locationInput}
-                  placeholder="Enter the location details (e.g., street address, landmark, area)"
-                  value={manualLocation}
-                  onChangeText={setManualLocation}
-                  multiline
-                  numberOfLines={4}
-                />
-                <TouchableOpacity
-                  style={styles.submitButton}
-                  onPress={handleManualLocationSubmit}
-                >
-                  <Text style={styles.submitButtonText}>OK</Text>
-                </TouchableOpacity>
-              </View>
+            {/* Manual Location Input Uber Style */}
+            <View style={styles.manualInputUberContainer}>
+              <Ionicons name="search-outline" size={24} color="#2563eb" style={{marginRight: 10}} />
+                  <TextInput
+                style={styles.manualInputUber}
+                placeholder="Enter address, landmark, or area"
+                    placeholderTextColor="#999"
+                    value={manualLocation}
+                    onChangeText={handleManualLocationChange}
+                autoFocus={true}
+                autoCorrect={false}
+                autoCapitalize="sentences"
+                underlineColorAndroid="transparent"
+                selectionColor="#2563eb"
+                  />
+                  {manualLocation.length > 0 && (
+                    <TouchableOpacity
+                      style={styles.clearInputButton}
+                      onPress={() => {
+                        setManualLocation('');
+                      }}
+                    >
+                  <Ionicons name="close-circle" size={22} color="#ccc" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+            {/* Confirm Location Button Uber Style */}
+                      <TouchableOpacity
+              style={styles.confirmLocationUberButton}
+              onPress={async () => {
+                if (!manualLocation.trim()) {
+                  Alert.alert('Error', 'Please enter a location');
+                  return;
+                }
+                setLoading(true);
+                try {
+                  // Geocode the manual location using Google Maps Geocoding API
+                  const apiKey = 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E';
+                  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(manualLocation)}&key=${apiKey}`;
+                  const response = await fetch(url);
+                  const data = await response.json();
+                  if (data.status === 'OK' && data.results.length > 0) {
+                    const loc = data.results[0].geometry.location;
+                    const formattedAddress = data.results[0].formatted_address;
+                    setFormData(prev => ({
+                      ...prev,
+                      location: {
+                        latitude: loc.lat,
+                        longitude: loc.lng
+                      },
+                      coordinates: {
+                        latitude: loc.lat,
+                        longitude: loc.lng
+                      }
+                    }));
+                    setLocationAddress(formattedAddress);
+                    await findNearestStationLocal(loc.lat, loc.lng);
+                    setShowLocationModal(false);
+                    setManualLocation('');
+                  } else {
+                    Alert.alert('Location Not Found', 'Could not find the location. Please try a more specific address.');
+                  }
+                } catch (error) {
+                  Alert.alert('Error', 'Failed to set location. Please try again.');
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={loading || !manualLocation.trim()}
+            >
+              <Text style={styles.confirmLocationUberText}>Confirm Location</Text>
+                      </TouchableOpacity>
+
+            {/* Use Current Location Button (Uber style, only if manual input is empty) */}
+            {manualLocation.length === 0 && (
+              <TouchableOpacity
+                style={styles.currentLocationUberButton}
+                onPress={getCurrentLocation}
+                disabled={loading}
+              >
+                <Ionicons name="locate" size={20} color="#2563eb" style={{marginRight: 8}} />
+                <Text style={styles.currentLocationUberText}>Use Current Location</Text>
+                {loading && <ActivityIndicator size="small" color="#2563eb" style={{marginLeft: 8}} />}
+              </TouchableOpacity>
+            )}
+
+            {/* Map Preview and Address */}
+              {formData.location && (
+              <View style={styles.mapUberSection}>
+                  <MapView
+                  style={styles.mapUber}
+                    region={{
+                      latitude: formData.location.latitude,
+                      longitude: formData.location.longitude,
+                      latitudeDelta: 0.01,
+                      longitudeDelta: 0.01,
+                    }}
+                    showsUserLocation={true}
+                    showsMyLocationButton={true}
+                  >
+                    <Marker
+                      coordinate={{
+                        latitude: formData.location.latitude,
+                        longitude: formData.location.longitude,
+                      }}
+                    title="Selected Location"
+                      description={locationAddress}
+                    pinColor="#2563eb"
+                    />
+                    {nearestStation && nearestStation.latitude && nearestStation.longitude && (
+                      <Marker
+                        coordinate={{
+                          latitude: nearestStation.latitude,
+                          longitude: nearestStation.longitude,
+                        }}
+                        title={nearestStation.station_name}
+                        description="Nearest Fire Station"
+                      pinColor="#DC3545"
+                      />
+                    )}
+                  </MapView>
+                <View style={styles.uberLocationInfo}>
+                  <Ionicons name="location" size={18} color="#2563eb" style={{marginRight: 6}} />
+                  <Text style={styles.uberLocationInfoText}>{locationAddress}</Text>
+                </View>
+                    {nearestStation && (
+                  <Text style={styles.uberNearestStationInfo}>
+                        Nearest Station: {nearestStation.station_name}
+                      </Text>
+                    )}
+                </View>
+            )}
+
+            {showPlaceSuggestions && placeSuggestions.length > 0 && (
+              <View style={styles.suggestionsUberContainer}>
+                {placeSuggestions.map((item) => (
+                  <TouchableOpacity
+                    key={item.place_id}
+                    style={styles.suggestionUberItem}
+                    onPress={() => handlePlaceSuggestionSelect(item)}
+                  >
+                    <Ionicons name="location-outline" size={20} color="#2563eb" style={{marginRight: 10}} />
+                    <View style={{flex: 1}}>
+                      <Text style={styles.suggestionUberMainText}>{item.structured_formatting.main_text}</Text>
+                      {item.structured_formatting.secondary_text && (
+                        <Text style={styles.suggestionUberSecondaryText}>{item.structured_formatting.secondary_text}</Text>
+              )}
             </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -1379,29 +1693,18 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     backgroundColor: '#DC3545',
-    borderRadius: 25,
-    paddingVertical: 14,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
     marginTop: 10,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 3,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
   },
   submitButtonDisabled: {
-    opacity: 0.7,
+    backgroundColor: '#ccc',
   },
   submitButtonContent: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
-    textAlign: 'center',
   },
   errorText: {
     color: '#DC3545',
@@ -1470,71 +1773,235 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  modalContent: {
+  modalContentUber: {
     backgroundColor: '#fff',
     borderRadius: 20,
     padding: 20,
     width: '100%',
+    maxWidth: 420,
     maxHeight: '90%',
     elevation: 5,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    alignSelf: 'center',
   },
-  modalHeader: {
+  modalHeaderUber: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 18,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#f0f0f0',
     paddingBottom: 10,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
+  modalTitleUber: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#222',
   },
-  locationOptions: {
-    flex: 1,
-    width: '100%',
-  },
-  searchContainer: {
-    flex: 1,
-    width: '100%',
-  },
-  locationInput: {
+  manualInputUberContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#f8f9fa',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 15,
-    fontSize: 16,
-    flex: 1,
-    minHeight: 120,
-    textAlignVertical: 'top',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#2563eb',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     marginBottom: 16,
   },
-  submitButton: {
-    backgroundColor: '#DC3545',
-    padding: 12,
-    borderRadius: 8,
+  manualInputUber: {
+    flex: 1,
+    fontSize: 18,
+    color: '#222',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+  },
+  confirmLocationUberButton: {
+    backgroundColor: '#2563eb',
+    borderRadius: 10,
+    paddingVertical: 14,
     alignItems: 'center',
+    marginBottom: 12,
+    width: '100%',
   },
-  submitButtonText: {
+  confirmLocationUberText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    fontSize: 17,
+    letterSpacing: 0.5,
   },
-  mediaButtonContent: {
+  currentLocationUberButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    backgroundColor: '#f3f6fd',
+    borderRadius: 10,
+    paddingVertical: 12,
+    marginBottom: 16,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#2563eb',
+  },
+  currentLocationUberText: {
+    color: '#2563eb',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  mapUberSection: {
+    marginTop: 10,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    backgroundColor: '#f8f9fa',
+    marginBottom: 10,
+  },
+  mapUber: {
+    height: 180,
+    width: '100%',
+  },
+  uberLocationInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  uberLocationInfoText: {
+    fontSize: 15,
+    color: '#222',
     flex: 1,
+  },
+  uberNearestStationInfo: {
+    fontSize: 13,
+    color: '#2563eb',
+    padding: 10,
+    fontWeight: '500',
+  },
+  locationDisplayButton: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  selectedLocation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  selectLocation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  locationIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#fef2f2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+  },
+  locationDetails: {
+    flex: 1,
+  },
+  selectedLocationText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  nearestStationText: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  selectLocationText: {
+    flex: 1,
+  },
+  selectLocationTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  selectLocationSubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  quickLocationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fef2f2',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    marginTop: 8,
+    gap: 8,
+  },
+  quickLocationText: {
+    color: '#DC3545',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  mapPreviewContainer: {
+    marginTop: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+  },
+  mapPreview: {
+    height: 120,
+    width: '100%',
+  },
+  suggestionsUberContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    marginTop: 2,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#e1e5e9',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    maxHeight: 200,
+    overflow: 'hidden',
+  },
+  suggestionUberItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  suggestionUberMainText: {
+    fontSize: 16,
+    color: '#222',
+    fontWeight: '500',
+  },
+  suggestionUberSecondaryText: {
+    fontSize: 14,
+    color: '#888',
+    marginTop: 2,
   },
 }); 

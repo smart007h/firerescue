@@ -7,27 +7,94 @@ import {
   TouchableOpacity,
   Alert,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
-  const { incident } = route.params;
+  const { incident, onStatusChange } = route.params;
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [incidentDetails, setIncidentDetails] = useState(incident);
+  const [locationAddress, setLocationAddress] = useState('');
+  const [addressLoading, setAddressLoading] = useState(false);
+  const [reporterProfile, setReporterProfile] = useState(null);
+  const [showFullDescription, setShowFullDescription] = useState(false);
+
+  const getAddressFromCoords = async (latitude, longitude) => {
+    try {
+      const apiKey = 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E';
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.results && data.results.length > 0) {
+        return data.results[0].formatted_address;
+      }
+    } catch (e) {}
+    return null;
+  };
+
+  useEffect(() => {
+    if (incidentDetails && incidentDetails.location && incidentDetails.location.includes(',')) {
+      const [lat, lng] = incidentDetails.location.split(',').map(Number);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        setAddressLoading(true);
+        getAddressFromCoords(lat, lng)
+          .then(address => {
+            setLocationAddress(address || incidentDetails.location);
+            setAddressLoading(false);
+          })
+          .catch(() => {
+            setLocationAddress(incidentDetails.location);
+            setAddressLoading(false);
+          });
+      } else {
+        setLocationAddress(incidentDetails.location);
+      }
+    } else if (incidentDetails && incidentDetails.location) {
+      setLocationAddress(incidentDetails.location);
+    } else {
+      setLocationAddress('Location not available');
+    }
+  }, [incidentDetails?.location]);
+
+  useEffect(() => {
+    // Fetch reporter profile if reported_by is present
+    const fetchReporterProfile = async () => {
+      if (incidentDetails && incidentDetails.reported_by) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('full_name, phone, email')
+          .eq('id', incidentDetails.reported_by)
+          .single();
+        if (!error && data) setReporterProfile(data);
+      }
+    };
+    fetchReporterProfile();
+  }, [incidentDetails?.reported_by]);
 
   const loadIncidentDetails = async () => {
     try {
       setLoading(true);
+      await supabase.auth.getSession();
       const { data, error } = await supabase
         .from('incidents')
         .select('*')
         .eq('id', incident.id)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        if (error.message && error.message.toLowerCase().includes('jwt')) {
+          Alert.alert('Connection Error', 'Failed to load incident details. Your session has expired. Please log in again.', [
+            { text: 'Retry', onPress: loadIncidentDetails },
+            { text: 'Cancel', style: 'cancel' },
+          ]);
+          return;
+        }
+        throw error;
+      }
       setIncidentDetails(data);
     } catch (error) {
       console.error('Error loading incident details:', error);
@@ -41,20 +108,38 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
   const handleStatusUpdate = async (newStatus) => {
     try {
       setLoading(true);
+      await supabase.auth.getSession();
       const { error } = await supabase
         .from('incidents')
         .update({ status: newStatus })
         .eq('id', incident.id);
 
-      if (error) throw error;
+      if (error) {
+        if (error.message && error.message.toLowerCase().includes('jwt')) {
+          Alert.alert('Connection Error', 'Failed to update incident status. Your session has expired. Please log in again.', [
+            { text: 'Retry', onPress: () => handleStatusUpdate(newStatus) },
+            { text: 'Cancel', style: 'cancel' },
+          ]);
+          return;
+        }
+        throw error;
+      }
       await loadIncidentDetails();
       Alert.alert('Success', 'Incident status updated successfully');
+      if (newStatus === 'resolved' && typeof onStatusChange === 'function') {
+        onStatusChange();
+        navigation.goBack();
+      }
     } catch (error) {
       console.error('Error updating incident status:', error);
       Alert.alert('Error', 'Failed to update incident status');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleTrackIncident = () => {
+    navigation.navigate('DispatchTrackingScreen', { incidentId: incident.id });
   };
 
   const getPriorityColor = (priority) => {
@@ -83,6 +168,30 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
     }
   };
 
+  // Utility to update dispatcher_id to the correct UUID
+  const updateDispatcherIdToUUID = async (incidentId, dispatcherEmail) => {
+    // Fetch the dispatcher user by email
+    const { data: dispatcherUser, error: userError } = await supabase
+      .from('dispatchers')
+      .select('id, email')
+      .eq('email', dispatcherEmail)
+      .single();
+    if (userError || !dispatcherUser) {
+      console.error('Dispatcher not found or error:', userError);
+      return false;
+    }
+    // Update the incident with the correct dispatcher UUID
+    const { error: updateError } = await supabase
+      .from('incidents')
+      .update({ dispatcher_id: dispatcherUser.id })
+      .eq('id', incidentId);
+    if (updateError) {
+      console.error('Failed to update dispatcher_id to UUID:', updateError);
+      return false;
+    }
+    return true;
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -103,7 +212,7 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
       >
         <View style={styles.card}>
           <View style={styles.cardHeader}>
-            <Text style={styles.incidentType}>{incidentDetails.type}</Text>
+            <Text style={styles.incidentType}>{incidentDetails.incident_type}</Text>
             <View
               style={[
                 styles.statusBadge,
@@ -111,23 +220,69 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
               ]}
             >
               <Text style={styles.statusText}>
-                {incidentDetails.status.toUpperCase()}
+                {(incidentDetails.status || 'Unknown').toUpperCase()}
               </Text>
             </View>
           </View>
 
+          {/* Incident Type */}
           <View style={styles.detailRow}>
-            <Icon name="map-marker" size={20} color="#007AFF" />
-            <Text style={styles.detailText}>{incidentDetails.location}</Text>
+            <Icon name="alert-circle" size={20} color="#007AFF" />
+            <Text style={styles.detailText}>Type: {incidentDetails.incident_type || 'Not specified'}</Text>
           </View>
 
+          {/* Station Information */}
+          {incidentDetails.station_id && (
+            <View style={styles.detailRow}>
+              <Icon name="office-building" size={20} color="#007AFF" />
+              <Text style={styles.detailText}>Station: {incidentDetails.station_id}</Text>
+            </View>
+          )}
+
+          {/* Date/Time Incident was sent by user */}
           <View style={styles.detailRow}>
             <Icon name="clock-outline" size={20} color="#007AFF" />
             <Text style={styles.detailText}>
-              {new Date(incidentDetails.created_at).toLocaleString()}
+              Reported: {incidentDetails.created_at ? new Date(incidentDetails.created_at).toLocaleString() : 'N/A'}
             </Text>
           </View>
 
+          {/* Date/Time Station approved */}
+          {incidentDetails.approved_at && (
+            <View style={styles.detailRow}>
+              <Icon name="check-circle" size={20} color="#007AFF" />
+              <Text style={styles.detailText}>
+                Approved: {new Date(incidentDetails.approved_at).toLocaleString()}
+              </Text>
+            </View>
+          )}
+
+          {/* Reporter Information (from profile) */}
+          {reporterProfile && (
+            <>
+              {reporterProfile.full_name && (
+                <View style={styles.detailRow}>
+                  <Icon name="account" size={20} color="#007AFF" />
+                  <Text style={styles.detailText}>Reporter: {reporterProfile.full_name}</Text>
+                </View>
+              )}
+              {reporterProfile.phone && (
+                <View style={styles.detailRow}>
+                  <Icon name="phone" size={20} color="#007AFF" />
+                  <Text style={styles.detailText}>Phone: {reporterProfile.phone}</Text>
+                </View>
+              )}
+              {reporterProfile.email && (
+                <View style={styles.detailRow}>
+                  <Icon name="email" size={20} color="#007AFF" />
+                  <Text style={styles.detailText}>Email: {reporterProfile.email}</Text>
+                </View>
+              )}
+            </>
+          )}
+
+          {/* Priority row: only show if priority is set and not unknown */}
+          {incidentDetails.priority && incidentDetails.priority.toLowerCase() !== 'unknown' && (
           <View style={styles.detailRow}>
             <Icon name="flag" size={20} color="#007AFF" />
             <View
@@ -137,34 +292,117 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
               ]}
             >
               <Text style={styles.priorityText}>
-                {incidentDetails.priority.toUpperCase()}
+                  {incidentDetails.priority.toUpperCase()}
               </Text>
             </View>
           </View>
+          )}
 
-          <Text style={styles.description}>{incidentDetails.description}</Text>
+          <View style={styles.detailRow}>
+            <Icon name="map-marker" size={20} color="#007AFF" />
+            {addressLoading ? (
+              <Text style={styles.detailText}>Loading address...</Text>
+            ) : (
+              <Text style={styles.detailText}>{locationAddress}</Text>
+            )}
+          </View>
+
+          {/* If you have address field, show it here */}
+          {incidentDetails.address && (
+            <View style={styles.detailRow}>
+              <Icon name="map" size={20} color="#007AFF" />
+              <Text style={styles.detailText}>Address: {incidentDetails.address}</Text>
+            </View>
+          )}
+
+          {/* Additional incident details */}
+          {incidentDetails.severity && (
+            <View style={styles.detailRow}>
+              <Icon name="alert-circle" size={20} color="#007AFF" />
+              <Text style={styles.detailText}>Severity: {incidentDetails.severity}</Text>
+            </View>
+          )}
+
+          {incidentDetails.emergency_level && (
+            <View style={styles.detailRow}>
+              <Icon name="fire" size={20} color="#007AFF" />
+              <Text style={styles.detailText}>Emergency Level: {incidentDetails.emergency_level}</Text>
+            </View>
+          )}
+
+          {incidentDetails.additional_info && (
+          <View style={styles.detailRow}>
+              <Icon name="information" size={20} color="#007AFF" />
+              <Text style={styles.detailText}>Additional Info: {incidentDetails.additional_info}</Text>
+          </View>
+          )}
+
+          {/* Description Section */}
+          <Text style={{ fontWeight: 'bold', fontSize: 16, marginTop: 16, marginBottom: 4 }}>Description</Text>
+          {(() => {
+            const words = incidentDetails.description ? incidentDetails.description.split(' ') : [];
+            if (words.length > 15 && !showFullDescription) {
+              return (
+                <>
+                  <Text style={styles.description}>{words.slice(0, 15).join(' ')}...</Text>
+                  <TouchableOpacity onPress={() => setShowFullDescription(true)}>
+                    <Text style={{ color: '#007AFF', marginTop: 4 }}>Read more</Text>
+                  </TouchableOpacity>
+                </>
+              );
+            } else {
+              return <Text style={styles.description}>{incidentDetails.description}</Text>;
+            }
+          })()}
+
+          {/* Media Previews */}
+          {incidentDetails.media && Array.isArray(incidentDetails.media) && incidentDetails.media.length > 0 && (
+            <View style={{ marginVertical: 12 }}>
+              <Text style={{ fontWeight: 'bold', marginBottom: 6, fontSize: 16 }}>Media Attachments:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {incidentDetails.media.map((media, idx) => (
+                  <View key={idx} style={{ marginRight: 12 }}>
+                    {media.type && media.type.startsWith('image') ? (
+                      <Image 
+                        source={{ uri: media.url }} 
+                        style={{ width: 200, height: 120, borderRadius: 8 }} 
+                        resizeMode="cover" 
+                      />
+                    ) : media.type && media.type.startsWith('video') ? (
+                      <View style={{ 
+                        width: 200, 
+                        height: 120, 
+                        backgroundColor: '#000', 
+                        borderRadius: 8, 
+                        justifyContent: 'center', 
+                        alignItems: 'center' 
+                      }}>
+                        <Icon name="play-circle" size={40} color="#fff" />
+                        <Text style={{ color: '#fff', marginTop: 8 }}>Video</Text>
+                      </View>
+                    ) : (
+                      <View style={{ 
+                        width: 200, 
+                        height: 120, 
+                        backgroundColor: '#f0f0f0', 
+                        borderRadius: 8, 
+                        justifyContent: 'center', 
+                        alignItems: 'center' 
+                      }}>
+                        <Icon name="file" size={40} color="#666" />
+                        <Text style={{ color: '#666', marginTop: 8 }}>File</Text>
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          )}
         </View>
 
         <View style={styles.actionsContainer}>
           <Text style={styles.actionsTitle}>Update Status</Text>
           <View style={styles.actionButtons}>
-            <TouchableOpacity
-              style={[
-                styles.actionButton,
-                incidentDetails.status === 'active' && styles.actionButtonActive,
-              ]}
-              onPress={() => handleStatusUpdate('active')}
-              disabled={loading}
-            >
-              <Text
-                style={[
-                  styles.actionButtonText,
-                  incidentDetails.status === 'active' && styles.actionButtonTextActive,
-                ]}
-              >
-                Active
-              </Text>
-            </TouchableOpacity>
             <TouchableOpacity
               style={[
                 styles.actionButton,
@@ -200,6 +438,15 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
               </Text>
             </TouchableOpacity>
           </View>
+          
+          {/* Track Button */}
+          <TouchableOpacity
+            style={styles.trackButton}
+            onPress={handleTrackIncident}
+          >
+            <Icon name="map-marker-radius" size={20} color="#fff" />
+            <Text style={styles.trackButtonText}>Track Incident</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>
@@ -332,6 +579,21 @@ const styles = StyleSheet.create({
   },
   actionButtonTextActive: {
     color: '#FFFFFF',
+  },
+  trackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#007AFF',
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  trackButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    marginLeft: 8,
+    fontSize: 16,
   },
 });
 

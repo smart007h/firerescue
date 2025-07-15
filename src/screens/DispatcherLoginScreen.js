@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { TextInput, Button } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '../config/supabaseClient';
+import { useAuth } from '../context/AuthContext';
 
 const DispatcherLoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
@@ -22,43 +24,94 @@ const DispatcherLoginScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(null);
+  const { updateDispatcherAuth } = useAuth();
+
+  // Debug: Log Supabase session on app start
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('DEBUG: Supabase session on app start:', session);
+    });
+  }, []);
 
   const handleLogin = async () => {
+    console.log('Login started');
     if (!email || !password) {
       setError('Please fill in all fields');
+      console.log('Login failed: missing email or password');
       return;
     }
 
     try {
       setLoading(true);
       setError(null);
+      console.log('Loading set to true, starting Supabase Auth');
 
-      // For development/testing, we'll use a hardcoded dispatcher
-      const mockDispatcher = {
-        dispatcher_id: 'DISP001',
-        name: 'Dispatcher 1',
-        station_id: 'FS010',
-        station_name: 'Bolgatanga Fire Station',
-        email: email,
-        role: 'dispatcher',
-      };
+      // 1. Login with Supabase Auth
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      console.log('After supabase.auth.signInWithPassword', data, authError);
 
-      // Store dispatcher data
-      await AsyncStorage.setItem('dispatcherData', JSON.stringify(mockDispatcher));
+      if (authError || !data.user) {
+        setError(authError?.message || 'Invalid email or password');
+        setLoading(false);
+        console.log('Login failed: Supabase Auth error or no user', authError, data.user);
+        return;
+      }
+
+      // 2. Fetch dispatcher profile by user id (UUID)
+      const { data: dispatcherData, error: dispatcherError } = await supabase
+        .from('dispatchers')
+        .select('*')
+        .eq('id', data.user.id)
+        .eq('is_active', true)
+        .single();
+      console.log('After fetching dispatcher profile', dispatcherData, dispatcherError);
+
+      if (dispatcherError || !dispatcherData) {
+        setError('User is not an active dispatcher');
+        setLoading(false);
+        console.log('Login failed: Not an active dispatcher', dispatcherError, dispatcherData);
+        return;
+      }
+
+      // 3. Update the AuthContext with dispatcher data
+      await updateDispatcherAuth(dispatcherData);
+      console.log('After updateDispatcherAuth');
+
+      // 4. Store dispatcher data in AsyncStorage (required for auth flow)
+      await AsyncStorage.setItem('dispatcherData', JSON.stringify(dispatcherData));
       await AsyncStorage.setItem('userRole', 'dispatcher');
+      await AsyncStorage.setItem('userId', dispatcherData.id);
+      await AsyncStorage.setItem('userEmail', dispatcherData.email);
+      console.log('After AsyncStorage set');
 
-      // Navigate to dispatcher dashboard
+      // 5. Navigate to dispatcher dashboard
+      console.log('Navigating to DispatcherDashboard');
       navigation.replace('DispatcherDashboard');
+      console.log('After navigation.replace');
     } catch (error) {
       console.error('Login error:', error);
       setError('Failed to login. Please try again.');
+      console.log('Login error caught in catch block');
     } finally {
       setLoading(false);
+      console.log('Loading set to false (finally block)');
     }
   };
 
   const handleForgotPassword = () => {
     navigation.navigate('ForgotPassword', { userType: 'dispatcher' });
+  };
+
+  const handleClearStorage = async () => {
+    try {
+      await AsyncStorage.clear();
+      Alert.alert('Storage Cleared', 'AsyncStorage has been cleared. Please restart the app and log in again.');
+    } catch (e) {
+      Alert.alert('Error', 'Failed to clear AsyncStorage.');
+    }
   };
 
   return (
@@ -143,6 +196,13 @@ const DispatcherLoginScreen = ({ navigation }) => {
                 onPress={() => navigation.goBack()}
               >
                 <Text style={styles.backButtonText}>Back to Selection</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: '#c62828', marginTop: 10 }]}
+                onPress={handleClearStorage}
+              >
+                <Text style={styles.buttonText}>Clear Storage (Debug)</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>

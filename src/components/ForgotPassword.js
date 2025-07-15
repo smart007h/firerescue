@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../config/supabaseClient';
 
 export default function ForgotPassword() {
   const navigation = useNavigation();

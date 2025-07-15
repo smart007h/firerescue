@@ -8,7 +8,7 @@ import {
   Alert,
   RefreshControl,
 } from 'react-native';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../config/supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
@@ -25,9 +25,17 @@ const DispatchIncidentHistoryScreen = ({ navigation }) => {
   const loadIncidents = async () => {
     try {
       setLoading(true);
+      const dispatcherId = await AsyncStorage.getItem('userId');
+      if (!dispatcherId) {
+        setIncidents([]);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
       let query = supabase
         .from('incidents')
         .select('*')
+        .eq('dispatcher_id', dispatcherId)
         .order('created_at', { ascending: false });
 
       if (filter !== 'all') {
@@ -53,7 +61,7 @@ const DispatchIncidentHistoryScreen = ({ navigation }) => {
   }, [filter]);
 
   const handleViewIncident = (incident) => {
-    navigation.navigate('DispatchIncidentDetails', { incident });
+    navigation.navigate('DispatchIncidentDetailsScreen', { incident });
   };
 
   const getPriorityColor = (priority) => {
@@ -163,7 +171,7 @@ const DispatchIncidentHistoryScreen = ({ navigation }) => {
                   ]}
                 >
                   <Text style={styles.statusText}>
-                    {incident.status.toUpperCase()}
+                    {(incident.status || 'N/A').toUpperCase()}
                   </Text>
                 </View>
               </View>
@@ -189,7 +197,7 @@ const DispatchIncidentHistoryScreen = ({ navigation }) => {
                   ]}
                 >
                   <Text style={styles.priorityText}>
-                    {incident.priority.toUpperCase()}
+                    {(incident.priority || 'N/A').toUpperCase()}
                   </Text>
                 </View>
               </View>

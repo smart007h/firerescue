@@ -9,6 +9,11 @@ import { useNavigation } from '@react-navigation/native';
 import { FlatList, RefreshControl } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
+import { getAddressFromCoordinates } from '../services/locationService';
+
+const SUPABASE_FUNCTION_URL = 'https://agpxjkmubrrtkxfhjmjm.supabase.co/functions/v1/assign-incident';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFncHhqa211YnJydGt4ZmhqbWptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIzMDQxMjMsImV4cCI6MjA1Nzg4MDEyM30.Lo5yTS9q05WZqifn9Y-z-dau3oCs24S1qgCuHtVFMqM';
+const GOOGLE_API_KEY = "AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E";
 
 const FirefighterHomeScreen = ({ navigation }) => {
   const [stationInfo, setStationInfo] = useState(null);
@@ -96,7 +101,37 @@ const FirefighterHomeScreen = ({ navigation }) => {
       console.log('Fetched active emergencies:', data);
       console.log('Number of active emergencies:', data?.length || 0);
       
-      setActiveEmergencies(data || []);
+      // Convert coordinates to addresses for each emergency
+      const emergenciesWithAddresses = await Promise.all(
+        (data || []).map(async (emergency) => {
+          let locationAddress = 'Location not available';
+          
+          if (emergency.location) {
+            try {
+              // Check if location is in coordinate format (contains comma and numbers)
+              if (emergency.location.includes(',') && /^-?\d+\.?\d*,-?\d+\.?\d*$/.test(emergency.location.replace(/\s/g, ''))) {
+                const [lat, lng] = emergency.location.split(',').map(Number);
+                if (!isNaN(lat) && !isNaN(lng)) {
+                  locationAddress = await getAddressFromGoogle(lat, lng);
+                }
+              } else {
+                // If it's already an address, use it as is
+                locationAddress = emergency.location;
+              }
+            } catch (locationError) {
+              console.error('Error converting location to address:', locationError);
+              locationAddress = emergency.location || 'Location not available';
+            }
+          }
+
+          return {
+            ...emergency,
+            location_address: locationAddress
+          };
+        })
+      );
+      
+      setActiveEmergencies(emergenciesWithAddresses || []);
     } catch (error) {
       console.error('Error loading active emergencies:', error);
       if (error.message?.includes('JWT expired') || error.message?.includes('authentication')) {
@@ -223,7 +258,7 @@ const FirefighterHomeScreen = ({ navigation }) => {
       const session = JSON.parse(sessionStr);
       
       // Check if session is expired
-      if (session.expires_at < new Date().getTime()) {
+      if (session.expires_at * 1000 < Date.now()) {
         console.log('Session expired');
         await handleSessionExpiration();
         return false;
@@ -299,7 +334,37 @@ const FirefighterHomeScreen = ({ navigation }) => {
         throw error;
       }
 
-      setIncidents(data || []);
+      // Convert coordinates to addresses for each incident
+      const incidentsWithAddresses = await Promise.all(
+        (data || []).map(async (incident) => {
+          let locationAddress = 'Location not available';
+          
+          if (incident.location) {
+            try {
+              // Check if location is in coordinate format (contains comma and numbers)
+              if (incident.location.includes(',') && /^-?\d+\.?\d*,-?\d+\.?\d*$/.test(incident.location.replace(/\s/g, ''))) {
+                const [lat, lng] = incident.location.split(',').map(Number);
+                if (!isNaN(lat) && !isNaN(lng)) {
+                  locationAddress = await getAddressFromGoogle(lat, lng);
+                }
+              } else {
+                // If it's already an address, use it as is
+                locationAddress = incident.location;
+              }
+            } catch (locationError) {
+              console.error('Error converting location to address:', locationError);
+              locationAddress = incident.location || 'Location not available';
+            }
+          }
+
+          return {
+            ...incident,
+            location_address: locationAddress
+          };
+        })
+      );
+
+      setIncidents(incidentsWithAddresses || []);
     } catch (error) {
       console.error('Error loading incidents:', error);
       Alert.alert('Error', 'Failed to load incidents');
@@ -411,15 +476,15 @@ const FirefighterHomeScreen = ({ navigation }) => {
   };
 
   const handleIncidentPress = () => {
-    // Always navigate to FirefighterIncident screen with 'all' filter
+    // Always navigate to Incidents tab with 'all' filter
     navigation.reset({
       index: 0,
-      routes: [{ name: 'FirefighterIncident', params: { initialFilter: 'all' } }],
+      routes: [{ name: 'Incidents', params: { initialFilter: 'all' } }],
     });
   };
 
   const handleViewDetails = (incident) => {
-    navigation.navigate('FirefighterIncident', { 
+    navigation.navigate('Incidents', { 
       incidentId: incident.id,
       incidentData: incident
     });
@@ -428,19 +493,109 @@ const FirefighterHomeScreen = ({ navigation }) => {
   const handleRefresh = () => {
     setRefreshing(true);
     loadIncidents();
+    loadActiveEmergencies(stationInfo?.station_id);
+  };
+
+  const toRadians = (deg) => deg * (Math.PI / 180);
+
+  const haversineDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; // Earth radius in km
+    const dLat = toRadians(lat2 - lat1);
+    const dLon = toRadians(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   };
 
   const handleApproveIncident = async (incidentId) => {
     try {
-      const { error } = await supabase
+      // Fetch incident details for location and station_id
+      const { data: incidentDetails, error: fetchError } = await supabase
         .from('incidents')
-        .update({ status: 'in_progress' })
+        .select('id, location, station_id')
+        .eq('id', incidentId)
+        .single();
+      if (fetchError) throw fetchError;
+      let incident_lat = null, incident_lng = null;
+      if (incidentDetails && incidentDetails.location) {
+        const coords = incidentDetails.location.split(',');
+        if (coords.length === 2) {
+          incident_lat = parseFloat(coords[0]);
+          incident_lng = parseFloat(coords[1]);
+        }
+      }
+      const stationId = incidentDetails?.station_id;
+      if (incident_lat == null || incident_lng == null) {
+        Alert.alert('Error', 'Incident location is missing or invalid. Cannot assign dispatcher.');
+        return;
+      }
+      // Fetch all available dispatchers for the station with their coordinates
+      const { data: dispatchers, error: dispatcherError } = await supabase
+        .from('dispatchers')
+        .select('id, dispatcher_id, latitude, longitude, is_active')
+        .eq('station_id', stationId)
+        .eq('is_active', true);
+      if (dispatcherError || !dispatchers || dispatchers.length === 0) {
+        Alert.alert('Error', 'No available dispatchers found for this station.');
+        return;
+      }
+      // Filter out dispatchers without coordinates
+      const dispatchersWithCoords = dispatchers.filter(d => d.latitude != null && d.longitude != null);
+      if (dispatchersWithCoords.length === 0) {
+        Alert.alert('Error', 'No dispatchers with valid coordinates found.');
+        return;
+      }
+      // Find the nearest dispatcher
+      let nearestDispatcher = null;
+      let minDistance = Infinity;
+      for (const dispatcher of dispatchersWithCoords) {
+        const dist = haversineDistance(incident_lat, incident_lng, dispatcher.latitude, dispatcher.longitude);
+        if (dist < minDistance) {
+          minDistance = dist;
+          nearestDispatcher = dispatcher;
+        }
+      }
+      if (!nearestDispatcher) {
+        Alert.alert('Error', 'Could not determine the nearest dispatcher.');
+        return;
+      }
+      // Double-check dispatcher exists by UUID
+      const { data: dispatcherRecord, error: dispatcherRecordError } = await supabase
+        .from('dispatchers')
+        .select('id')
+        .eq('id', nearestDispatcher.id)
+        .single();
+      if (dispatcherRecordError || !dispatcherRecord) {
+        Alert.alert('Error', 'Dispatcher record not found or mismatched.');
+        return;
+      }
+      // Update the incident status and dispatcher_id (UUID) in the database
+      const { error: updateError } = await supabase
+        .from('incidents')
+        .update({ status: 'in_progress', updated_at: new Date().toISOString(), dispatcher_id: nearestDispatcher.id })
         .eq('id', incidentId);
-
-      if (error) throw error;
-      Alert.alert('Success', 'Incident approved successfully');
-      // Refresh incidents list
-      loadIncidents();
+      if (updateError) {
+        Alert.alert('Error', 'Incident assigned but failed to update incident in database.');
+        return;
+      }
+      // Show the assignment message with dispatcher name and email
+      const assignmentMessage = `Incident approved and assigned to nearest dispatcher: ${nearestDispatcher.name} (${nearestDispatcher.email})`;
+      // Show the alert and reload the list after user dismisses
+      Alert.alert(
+        'Incident Approval',
+        assignmentMessage,
+        [
+          {
+            text: 'OK',
+            onPress: async () => {
+              loadIncidents();
+            }
+          }
+        ]
+      );
     } catch (error) {
       console.error('Error approving incident:', error);
       Alert.alert('Error', 'Failed to approve incident');
@@ -467,16 +622,17 @@ const FirefighterHomeScreen = ({ navigation }) => {
     }
   };
 
-  const formatLocation = (location) => {
+  const formatLocation = (location, location_address) => {
+    if (location_address && location_address !== 'Location not available') {
+      return location_address;
+    }
     if (!location) return 'Location not available';
     
-    // If location contains coordinates (comma-separated numbers)
-    if (location.match(/^-?\d+\.?\d*,\s*-?\d+\.?\d*$/)) {
-      // Extract the text location from the address string in the image
-      return 'Amphitheatre Parkway, Mountain View, California, United States';
+    // If location is coordinates, return a generic message
+    if (location.includes(',') && /^-?\d+\.?\d*,-?\d+\.?\d*$/.test(location.replace(/\s/g, ''))) {
+      return 'Location coordinates available';
     }
     
-    // If it's already a text location, return as is
     return location;
   };
 
@@ -538,7 +694,8 @@ const FirefighterHomeScreen = ({ navigation }) => {
             {
               icon: 'location-outline',
               label: 'Station Address',
-              value: stationInfo?.station_address || 'Address not available'
+              value: stationInfo?.station_address || 'Address not available',
+              onPress: () => handleCallStation(stationInfo?.station_contact)
             },
             {
               icon: 'call-outline',
@@ -622,10 +779,10 @@ const FirefighterHomeScreen = ({ navigation }) => {
             <View style={styles.detailRow}>
               <Ionicons name="location-outline" size={18} color="#666" style={styles.detailIcon} />
               <View style={styles.locationValueContainer}>
-                <Text style={styles.detailValue} numberOfLines={2}>
-                  {formatLocation(emergency.location)}
+                <Text style={styles.detailValue} numberOfLines={3}>
+                  {emergency.location_address || formatLocation(emergency.location)}
                 </Text>
-                {emergency.location.includes(',') && (
+                {emergency.location && emergency.location.includes(',') && /^-?\d+\.?\d*,-?\d+\.?\d*$/.test(emergency.location.replace(/\s/g, '')) && (
                   <TouchableOpacity 
                     onPress={(e) => {
                       e.stopPropagation();
@@ -633,7 +790,7 @@ const FirefighterHomeScreen = ({ navigation }) => {
                     }}
                     style={styles.viewMapButton}
                   >
-                    <Text style={styles.viewMapText}>Map</Text>
+                    <Text style={styles.viewMapText}>View on Map</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -642,7 +799,7 @@ const FirefighterHomeScreen = ({ navigation }) => {
             <View style={styles.descriptionRow}>
               <Ionicons name="document-text-outline" size={18} color="#666" style={styles.detailIcon} />
               <View style={styles.descriptionContainer}>
-                <Text style={styles.detailValue} numberOfLines={2}>
+                <Text style={styles.detailValue} numberOfLines={3}>
                   {emergency.description}
                 </Text>
               </View>
@@ -708,10 +865,10 @@ const FirefighterHomeScreen = ({ navigation }) => {
               <View style={styles.detailRow}>
                 <Ionicons name="location-outline" size={18} color="#666" style={styles.detailIcon} />
                 <View style={styles.locationValueContainer}>
-                  <Text style={styles.detailValue} numberOfLines={2}>
-                    {formatLocation(item.location)}
+                  <Text style={styles.detailValue} numberOfLines={3}>
+                    {item.location_address || formatLocation(item.location)}
                   </Text>
-                  {item.location.includes(',') && (
+                  {item.location && item.location.includes(',') && /^-?\d+\.?\d*,-?\d+\.?\d*$/.test(item.location.replace(/\s/g, '')) && (
                     <TouchableOpacity 
                       onPress={(e) => {
                         e.stopPropagation();
@@ -719,7 +876,7 @@ const FirefighterHomeScreen = ({ navigation }) => {
                       }}
                       style={styles.viewMapButton}
                     >
-                      <Text style={styles.viewMapText}>Map</Text>
+                      <Text style={styles.viewMapText}>View on Map</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -728,7 +885,7 @@ const FirefighterHomeScreen = ({ navigation }) => {
               <View style={styles.descriptionRow}>
                 <Ionicons name="document-text-outline" size={18} color="#666" style={styles.detailIcon} />
                 <View style={styles.descriptionContainer}>
-                  <Text style={styles.detailValue} numberOfLines={2}>
+                  <Text style={styles.detailValue} numberOfLines={3}>
                     {displayDescription}
                   </Text>
                   {isLongDescription && (
@@ -880,6 +1037,22 @@ const FirefighterHomeScreen = ({ navigation }) => {
     );
   };
 
+  const getAddressFromGoogle = async (latitude, longitude) => {
+    const apiKey = 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E';
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`;
+    try {
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.status === 'OK' && data.results.length > 0) {
+        return data.results[0].formatted_address;
+      }
+      return 'Location not available';
+    } catch (error) {
+      console.error('Google Geocoding API error:', error);
+      return 'Location not available';
+    }
+  };
+
   if (loading && !refreshing) {
     return (
       <View style={styles.loadingContainer}>
@@ -899,22 +1072,30 @@ const FirefighterHomeScreen = ({ navigation }) => {
       >
         {renderStationInfo()}
         <View style={styles.statsContainer}>
-          <Card style={[styles.statCard, { backgroundColor: '#DC3545' }]}>
+          <TouchableOpacity
+            style={[styles.statCard, { backgroundColor: '#DC3545' }]}
+            onPress={() => navigation.navigate('Incidents', { initialFilter: 'in_progress' })}
+            activeOpacity={0.8}
+          >
             <Card.Content>
               <Text style={styles.statNumber}>{stats.activeCount}</Text>
-              <Text style={styles.statLabel}>Active{'\n'}Emergencies</Text>
+              <Text style={styles.statLabel}>Active{"\n"}Emergencies</Text>
             </Card.Content>
-          </Card>
-          <Card style={[styles.statCard, { backgroundColor: '#4CAF50' }]}>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.statCard, { backgroundColor: '#4CAF50' }]}
+            onPress={() => navigation.navigate('Incidents', { initialFilter: 'resolved', resolvedToday: true })}
+            activeOpacity={0.8}
+          >
             <Card.Content>
               <Text style={styles.statNumber}>{stats.resolvedToday}</Text>
-              <Text style={styles.statLabel}>Resolved{'\n'}Today</Text>
+              <Text style={styles.statLabel}>Resolved{"\n"}Today</Text>
             </Card.Content>
-          </Card>
-          <Card style={[styles.statCard, { backgroundColor: '#3949AB' }]}>
+          </TouchableOpacity>
+          <Card style={[styles.statCard, { backgroundColor: '#3949AB' }]}> 
             <Card.Content>
               <Text style={styles.statNumber}>{stats.responseRate}%</Text>
-              <Text style={styles.statLabel}>Response{'\n'}Rate</Text>
+              <Text style={styles.statLabel}>Response{"\n"}Rate</Text>
             </Card.Content>
           </Card>
         </View>
@@ -922,7 +1103,7 @@ const FirefighterHomeScreen = ({ navigation }) => {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Incoming Incidents</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('FirefighterIncident', { initialFilter: 'pending' })}>
+            <TouchableOpacity onPress={() => navigation.navigate('Incidents', { initialFilter: 'pending' })}>
               <Text style={styles.viewAllText}>View All</Text>
             </TouchableOpacity>
           </View>
@@ -940,7 +1121,7 @@ const FirefighterHomeScreen = ({ navigation }) => {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Active Emergencies</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('FirefighterIncident', { initialFilter: 'in_progress' })}>
+            <TouchableOpacity onPress={() => navigation.navigate('Incidents', { initialFilter: 'in_progress' })}>
               <Text style={styles.viewAllText}>View All</Text>
             </TouchableOpacity>
           </View>
@@ -994,8 +1175,8 @@ const styles = StyleSheet.create({
   statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
   },
   statCard: {
     width: '31%',
@@ -1180,16 +1361,18 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   stationInfoContainer: {
-    margin: 16,
+    marginTop: 4,
+    marginBottom: 8,
+    marginHorizontal: 8,
     elevation: 4,
   },
   stationInfoCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 16,
-    marginHorizontal: 16,
-    marginTop: 16,
-    width: '90%',
+    padding: 10,
+    marginHorizontal: 0,
+    marginTop: 0,
+    width: '100%',
     alignSelf: 'center',
     elevation: 3,
     shadowColor: '#000',
@@ -1640,6 +1823,21 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: 8,
     marginTop: 8,
+  },
+  welcomeContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+    marginBottom: 8,
+  },
+  welcomeTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2D3748',
+    fontFamily: 'Inter-Bold',
+    textAlign: 'center',
   },
 });
 

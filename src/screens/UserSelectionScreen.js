@@ -18,22 +18,9 @@ const UserSelectionScreen = ({ navigation }) => {
       if (data) {
         // User is already logged in, navigate to appropriate screen
         if (data.profile.role === 'firefighter') {
-          navigation.replace('DrawerNavigator', {
-            screen: 'MainStack',
-            params: {
-              screen: 'FirefighterMain'
-            }
-          });
+          navigation.replace('FirefighterMain');
         } else {
-          navigation.replace('DrawerNavigator', {
-            screen: 'MainStack',
-            params: {
-              screen: 'UserMain',
-              params: {
-                screen: 'Home'
-              }
-            }
-          });
+          navigation.replace('UserMain', { screen: 'Home' });
         }
       }
     } catch (error) {

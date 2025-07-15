@@ -1,4 +1,4 @@
-import { supabase } from '../config/supabaseClient';
+import { supabase } from '../lib/supabase';
 
 export const getStations = async () => {
   try {
@@ -96,15 +96,12 @@ export const getUserBookings = async (userId) => {
 
 export const getStationBookings = async (stationId) => {
   try {
+    console.log('=== DEBUG: getStationBookings called ===');
+    console.log('Querying for stationId:', stationId, 'Type:', typeof stationId);
     const { data, error } = await supabase
       .from('training_bookings')
       .select(`
         *,
-        profiles:user_id (
-          full_name,
-          email,
-          phone
-        ),
         firefighters (
           id,
           station_id,
@@ -115,7 +112,8 @@ export const getStationBookings = async (stationId) => {
       `)
       .eq('station_id', stationId)
       .order('training_date', { ascending: true });
-
+    console.log('Supabase query result:', data);
+    console.log('Supabase query error:', error);
     if (error) throw error;
     return { data, error: null };
   } catch (error) {
@@ -138,11 +136,6 @@ export const updateBookingStatus = async (bookingId, status) => {
           station_name,
           station_address,
           station_region
-        ),
-        profiles:user_id (
-          full_name,
-          email,
-          phone
         )
       `)
       .single();

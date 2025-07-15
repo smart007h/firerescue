@@ -18,7 +18,7 @@ import { supabase } from '../config/supabaseClient';
 const ForgotPasswordScreen = ({ navigation, route }) => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  const { userType } = route.params;
+  const userType = route?.params?.userType || 'user';
 
   const handleResetPassword = async () => {
     if (!email) {

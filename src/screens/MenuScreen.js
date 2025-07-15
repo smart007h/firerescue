@@ -15,10 +15,7 @@ const MenuScreen = ({ navigation }) => {
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Welcome' }],
-      });
+      // Do not navigate; let AuthContext/AppNavigator handle stack switch
     } catch (error) {
       console.error('Error signing out:', error.message);
     }

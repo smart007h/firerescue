@@ -1,12 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TextInput, ScrollView, TouchableOpacity, Image, Alert, Linking } from 'react-native';
+import { View, StyleSheet, TextInput, ScrollView, TouchableOpacity, Image, Alert, Linking, Modal } from 'react-native';
 import { Text, IconButton, Card, Badge, Button } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../config/supabaseClient';
+import { supabase } from '../lib/supabase';
 import { useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
-import { getRandomStations } from '../services/trainingBookings';
+import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
+import MapView, { Marker } from 'react-native-maps';
+import { 
+  getCurrentLocation, 
+  getAddressFromCoordinates, 
+  findNearestStation,
+  calculateDistance 
+} from '../services/locationService';
 
 const UserHomeScreen = () => {
   const navigation = useNavigation();
@@ -16,62 +23,56 @@ const UserHomeScreen = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [nearestStation, setNearestStation] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [selectedLocation, setSelectedLocation] = useState(null);
+  const [mapRegion, setMapRegion] = useState(null);
+  const [allNearbyStations, setAllNearbyStations] = useState([]);
+
+  // Google Places API configuration
+  const googlePlacesQuery = {
+    key: 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E',
+    language: 'en',
+    components: 'country:gh',
+    types: '(cities)',
+  };
 
   useEffect(() => {
-    loadRandomStations();
     loadUserProfile();
+    handleGetCurrentLocation();
   }, []);
 
-  const loadRandomStations = async () => {
-    try {
-      console.log('Loading random stations...');
-      setLoading(true);
-      
-      const { data: stations, error } = await getRandomStations(3);
-      
-      if (error) {
-        console.error('Error fetching random stations:', error);
-        throw error;
-      }
+  useEffect(() => {
+    if (userLocation && userLocation.latitude && userLocation.longitude) {
+      loadNearbyStations(userLocation);
+    }
+  }, [userLocation]);
 
-      console.log('Fetched random stations:', stations);
+  const handleLocationSelect = (data, details = null) => {
+    if (details) {
+      const location = {
+        latitude: details.geometry.location.lat,
+        longitude: details.geometry.location.lng,
+        address: details.formatted_address,
+      };
 
-      if (!stations || stations.length === 0) {
-        console.log('No stations found in database');
-        return;
-      }
-
-      // Fetch active incidents for all stations
-      const { data: activeIncidents, error: incidentsError } = await supabase
-        .from('incidents')
-        .select('station_id')
-        .eq('status', 'active');
-
-      if (incidentsError) {
-        console.error('Error fetching incidents:', incidentsError);
-        throw incidentsError;
-      }
-
-      const activeStationIds = new Set(activeIncidents?.map(incident => incident.station_id) || []);
-
-      // Add status for each station
-      const stationsWithStatus = stations.map(station => {
-        const hasActiveIncident = activeStationIds.has(station.station_id);
-        const stationStatus = hasActiveIncident ? 'Busy' : 'Available';
-
-        return {
-          ...station,
-          status: stationStatus
-        };
+      setSelectedLocation(location);
+      setMapRegion({
+        latitude: location.latitude,
+        longitude: location.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
       });
 
-      console.log('Processed stations:', stationsWithStatus);
-      setNearbyStations(stationsWithStatus);
-    } catch (error) {
-      console.error('Error loading stations:', error);
-      Alert.alert('Error', 'Failed to load nearby stations');
-    } finally {
-      setLoading(false);
+      // Find nearest station for selected location
+      findNearestStation(location.latitude, location.longitude);
+    }
+  };
+
+  const confirmLocation = () => {
+    if (selectedLocation) {
+      setUserLocation(selectedLocation);
+      setShowLocationModal(false);
+      Alert.alert('Success', 'Location updated successfully!');
     }
   };
 
@@ -95,74 +96,31 @@ const UserHomeScreen = () => {
     }
   };
 
-  const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371; // Radius of the earth in km
-    const dLat = deg2rad(lat2 - lat1);
-    const dLon = deg2rad(lon2 - lon1);
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    const d = R * c; // Distance in km
-    return d;
-  };
-
-  const deg2rad = (deg) => {
-    return deg * (Math.PI/180);
-  };
-
   const handleStationSearch = (query) => {
     setSearchQuery(query);
   };
 
+  // Filter among allNearbyStations, show up to 3 closest matches
   const filteredStations = searchQuery
-    ? nearbyStations.filter(station => 
-        station.station_name.toLowerCase().includes(searchQuery.toLowerCase()))
+    ? allNearbyStations.filter(station =>
+        (station.station_name && station.station_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (station.station_address && station.station_address.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (station.station_region && station.station_region.toLowerCase().includes(searchQuery.toLowerCase()))
+      ).slice(0, 3)
     : nearbyStations;
 
   const handleEmergencyCall = async () => {
     try {
       if (!userLocation) {
-        let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          Alert.alert('Permission Denied', 'Location permission is required for emergency calls.');
-          return;
-        }
-        const location = await Location.getCurrentPositionAsync({});
-        setUserLocation(location.coords);
-      }
-
-      // Get nearest station
-      const { data: stations, error } = await supabase
-        .from('firefighters')
-        .select('*')
-        .eq('is_active', true);
-
-      if (error) throw error;
-
-      if (!stations || stations.length === 0) {
-        Alert.alert('Error', 'No fire stations available.');
+        Alert.alert('Location Required', 'Please set your location first to find the nearest fire station.');
+        setShowLocationModal(true);
         return;
       }
 
-      // Calculate distances and find nearest
-      const stationsWithDistance = stations.map(station => {
-        const [stationLat, stationLng] = station.station_location.split(',').map(Number);
-        const distance = calculateDistance(
-          userLocation.latitude,
-          userLocation.longitude,
-          stationLat,
-          stationLng
-        );
-        return { ...station, distance };
-      });
-
-      const nearest = stationsWithDistance.reduce((prev, curr) => 
-        prev.distance < curr.distance ? prev : curr
-      );
-
-      setNearestStation(nearest);
+      if (!nearestStation) {
+        Alert.alert('Error', 'No fire stations available.');
+        return;
+      }
 
       // Create emergency call record
       const { data: { user } } = await supabase.auth.getUser();
@@ -170,7 +128,7 @@ const UserHomeScreen = () => {
         .from('emergency_calls')
         .insert({
           caller_id: user.id,
-          station_id: nearest.id,
+          station_id: nearestStation.station_id,
           caller_location: `${userLocation.latitude},${userLocation.longitude}`,
           status: 'pending'
         })
@@ -180,8 +138,8 @@ const UserHomeScreen = () => {
       if (callError) throw callError;
 
       // Make the actual phone call
-      if (nearest.phone_number) {
-        const phoneUrl = `tel:${nearest.phone_number}`;
+      if (nearestStation.station_contact) {
+        const phoneUrl = `tel:${nearestStation.station_contact}`;
         const canOpen = await Linking.canOpenURL(phoneUrl);
         
         if (canOpen) {
@@ -258,6 +216,198 @@ const UserHomeScreen = () => {
     }
   };
 
+  const handleGetCurrentLocation = async () => {
+    try {
+      const coords = await getCurrentLocation();
+      
+      if (!coords || typeof coords.latitude !== 'number' || typeof coords.longitude !== 'number') {
+        throw new Error('Invalid location coordinates received');
+      }
+      
+      setUserLocation(coords);
+      setMapRegion({
+        ...coords,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      });
+
+      // Get address for the location
+      const address = await getAddressFromCoordinates(coords.latitude, coords.longitude);
+      setSelectedLocation({
+        ...coords,
+        address,
+      });
+
+      // Find nearest station based on current location
+      const nearest = await findNearestStation(coords.latitude, coords.longitude);
+      setNearestStation(nearest);
+    } catch (error) {
+      console.error('Error getting current location:', error);
+      Alert.alert(
+        'Location Error',
+        error.message || 'Failed to get location. Please try again.'
+      );
+    }
+  };
+
+  // Fetch all stations and find the 3 closest to the user
+  const loadNearbyStations = async (userCoords) => {
+    setLoading(true);
+    try {
+      // Fetch all active stations
+      const { data: stations, error } = await supabase
+        .from('firefighters')
+        .select('*')
+        .eq('is_active', true);
+
+      if (error) throw error;
+      if (!stations || stations.length === 0) {
+        setNearbyStations([]);
+        setAllNearbyStations([]);
+        return;
+      }
+
+      // Fetch active incidents for all stations
+      const { data: activeIncidents, error: incidentsError } = await supabase
+        .from('incidents')
+        .select('station_id')
+        .eq('status', 'active');
+
+      if (incidentsError) throw incidentsError;
+      const activeStationIds = new Set(activeIncidents?.map(incident => incident.station_id) || []);
+
+      // Calculate distance and status for each station
+      const stationsWithDistance = stations.map(station => {
+        const hasActiveIncident = activeStationIds.has(station.station_id);
+        const stationStatus = hasActiveIncident ? 'Busy' : 'Available';
+        const distance = (station.latitude && station.longitude)
+          ? calculateDistance(userCoords.latitude, userCoords.longitude, station.latitude, station.longitude)
+          : null;
+        return {
+          ...station,
+          status: stationStatus,
+          distance
+        };
+      });
+
+      // Sort by distance
+      const sortedStations = stationsWithDistance
+        .filter(station => station.distance !== null && !isNaN(station.distance))
+        .sort((a, b) => a.distance - b.distance);
+
+      setAllNearbyStations(sortedStations);
+      setNearbyStations(sortedStations.slice(0, 3));
+    } catch (error) {
+      console.error('Error loading nearby stations:', error);
+      Alert.alert('Error', 'Failed to load nearby stations');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderLocationModal = () => (
+    <Modal
+      visible={showLocationModal}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setShowLocationModal(false)}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Set Your Location</Text>
+            <TouchableOpacity onPress={() => setShowLocationModal(false)}>
+              <Ionicons name="close" size={24} color="#333" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.locationSection}>
+            <Text style={styles.sectionTitle}>Search for a location:</Text>
+            <GooglePlacesAutocomplete
+              placeholder="Enter address, landmark, or area"
+              onPress={handleLocationSelect}
+              query={googlePlacesQuery}
+              styles={{
+                container: styles.autocompleteContainer,
+                textInput: styles.autocompleteInput,
+                listView: styles.autocompleteListView,
+              }}
+              fetchDetails={true}
+              enablePoweredByContainer={false}
+              nearbyPlacesAPI="GooglePlacesSearch"
+              debounce={300}
+            />
+          </View>
+
+          {mapRegion && (
+            <View style={styles.mapSection}>
+              <Text style={styles.sectionTitle}>Selected Location:</Text>
+              <MapView
+                style={styles.map}
+                region={mapRegion}
+                showsUserLocation={true}
+                showsMyLocationButton={true}
+              >
+                {selectedLocation && (
+                  <Marker
+                    coordinate={{
+                      latitude: selectedLocation.latitude,
+                      longitude: selectedLocation.longitude,
+                    }}
+                    title="Selected Location"
+                    description={selectedLocation.address}
+                  />
+                )}
+                {nearestStation && nearestStation.latitude && nearestStation.longitude && (
+                  <Marker
+                    coordinate={{
+                      latitude: nearestStation.latitude,
+                      longitude: nearestStation.longitude,
+                    }}
+                    title={nearestStation.station_name}
+                    description="Nearest Fire Station"
+                    pinColor="red"
+                  />
+                )}
+              </MapView>
+            </View>
+          )}
+
+          {selectedLocation && (
+            <View style={styles.locationInfo}>
+              <Text style={styles.locationText}>
+                <Ionicons name="location" size={16} color="#DC3545" />
+                {selectedLocation.address}
+              </Text>
+              {nearestStation && (
+                <Text style={styles.nearestStationText}>
+                  Nearest Station: {nearestStation.station_name} 
+                  ({nearestStation.distance?.toFixed(1)} km away)
+                </Text>
+              )}
+            </View>
+          )}
+
+          <View style={styles.modalButtons}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setShowLocationModal(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.confirmButton, !selectedLocation && styles.disabledButton]}
+              onPress={confirmLocation}
+              disabled={!selectedLocation}
+            >
+              <Text style={styles.confirmButtonText}>Confirm Location</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -265,14 +415,10 @@ const UserHomeScreen = () => {
         <IconButton 
           icon="menu" 
           size={20} 
-          onPress={() => navigation.openDrawer()}
+          onPress={() => navigation.navigate('MenuScreen')}
           color="#000" 
         />
         <View style={styles.logoContainer}>
-          <Image 
-            source={require('../assets/images/logo.jpeg')} 
-            style={styles.logo}
-          />
           <Text style={styles.logoText}>GHANA NATIONAL{'\n'}FIRE SERVICE</Text>
         </View>
         <IconButton
@@ -284,6 +430,26 @@ const UserHomeScreen = () => {
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {/* Location Status */}
+        <View style={styles.locationStatusContainer}>
+          <TouchableOpacity
+            style={styles.locationButton}
+            onPress={() => setShowLocationModal(true)}
+          >
+            <Ionicons 
+              name={userLocation ? "location" : "location-outline"} 
+              size={20} 
+              color={userLocation ? "#4CAF50" : "#666"} 
+            />
+            <Text style={[styles.locationText, userLocation && styles.locationActive]}>
+              Current Location
+            </Text>
+          </TouchableOpacity>
+          {userLocation && selectedLocation && selectedLocation.address && (
+            <Text style={styles.locationSubtext}>{selectedLocation.address}</Text>
+          )}
+        </View>
+
         {/* Search Bar */}
         <View style={styles.searchContainer}>
           <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
@@ -296,7 +462,7 @@ const UserHomeScreen = () => {
           />
         </View>
 
-        {/* Quick Action Grid */}
+        {/* Quick Action Grid - move back above stations */}
         <View style={styles.gridContainer}>
           <TouchableOpacity 
             style={[styles.gridItem, { backgroundColor: '#DC3545' }]}
@@ -304,14 +470,16 @@ const UserHomeScreen = () => {
           >
             <View style={styles.gridItemContent}>
               <Ionicons name="call" size={32} color="#FFFFFF" />
-              <Text style={styles.gridItemText}>Emergency{'\n'}contacts</Text>
+              <Text style={styles.gridItemText}>{`Emergency
+contacts`}</Text>
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.gridItem, { backgroundColor: '#3949AB' }]}>
+          <TouchableOpacity style={[styles.gridItem, { backgroundColor: '#3949AB' }]}> 
             <View style={styles.gridItemContent}>
               <Ionicons name="document-text" size={32} color="#FFFFFF" />
-              <Text style={styles.gridItemText}>Certificate{'\n'}Application</Text>
+              <Text style={styles.gridItemText}>{`Certificate
+Application`}</Text>
             </View>
           </TouchableOpacity>
 
@@ -320,7 +488,8 @@ const UserHomeScreen = () => {
           >
             <View style={styles.gridItemContent}>
               <Ionicons name="shield" size={32} color="#FFFFFF" />
-              <Text style={styles.gridItemText}>Safety{'\n'}Guidelines</Text>
+              <Text style={styles.gridItemText}>{`Safety
+Guidelines`}</Text>
             </View>
           </TouchableOpacity>
 
@@ -333,7 +502,8 @@ const UserHomeScreen = () => {
           >
             <View style={styles.gridItemContent}>
               <Ionicons name="time" size={32} color="#FFFFFF" />
-              <Text style={styles.gridItemText}>Reports{'\n'}History</Text>
+              <Text style={styles.gridItemText}>{`Reports
+History`}</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -341,18 +511,18 @@ const UserHomeScreen = () => {
         {/* Nearby Stations */}
         <View style={styles.stationsContainer}>
           <View style={styles.stationsHeader}>
-            <Text style={styles.stationsTitle}>Featured Fire Stations</Text>
+            <Text style={styles.stationsTitle}>Nearby Stations</Text>
           </View>
 
           {loading ? (
             <View style={styles.loadingContainer}>
               <Text style={styles.loadingText}>Loading stations...</Text>
             </View>
-          ) : nearbyStations.length > 0 ? (
-            nearbyStations.map((station, index) => (
+          ) : userLocation && filteredStations.length > 0 ? (
+            filteredStations.map((station, index, arr) => (
               <View key={station.id || index} style={[
                 styles.stationItem,
-                index === nearbyStations.length - 1 && { borderBottomWidth: 0 }
+                index === arr.length - 1 && { borderBottomWidth: 0 }
               ]}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.stationName}>{station.station_name}</Text>
@@ -369,6 +539,9 @@ const UserHomeScreen = () => {
                     >
                       {station.status}
                     </Badge>
+                    <Text style={{ fontSize: 12, color: '#666', marginLeft: 8 }}>
+                      {station.distance?.toFixed(2)} km away
+                    </Text>
                   </View>
                 </View>
                 <TouchableOpacity 
@@ -387,6 +560,8 @@ const UserHomeScreen = () => {
           )}
         </View>
       </ScrollView>
+
+      {renderLocationModal()}
     </SafeAreaView>
   );
 };
@@ -432,13 +607,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     color: '#E53935',
-    marginLeft: 8,
     textShadowColor: 'rgba(0, 0, 0, 0.1)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
   profileButton: {
     margin: 0,
+  },
+  locationStatusContainer: {
+    backgroundColor: '#fff',
+    marginHorizontal: 8,
+    marginVertical: 6,
+    borderRadius: 12,
+    padding: 12,
+    elevation: 2,
+  },
+  locationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  locationText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  locationActive: {
+    color: '#4CAF50',
+    fontWeight: '600',
   },
   searchContainer: {
     flexDirection: 'row',
@@ -589,6 +785,132 @@ const styles = StyleSheet.create({
     padding: 20,
     fontStyle: 'italic',
     fontSize: 14,
+  },
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    width: '100%',
+    maxHeight: '90%',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    paddingBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#333',
+  },
+  locationSection: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 10,
+  },
+  autocompleteContainer: {
+    flex: 0,
+  },
+  autocompleteInput: {
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 15,
+    fontSize: 16,
+  },
+  autocompleteListView: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    marginTop: 5,
+  },
+  mapSection: {
+    marginBottom: 20,
+  },
+  map: {
+    height: 200,
+    borderRadius: 12,
+  },
+  locationInfo: {
+    backgroundColor: '#f8f9fa',
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 20,
+  },
+  locationText: {
+    fontSize: 14,
+    color: '#333',
+    marginBottom: 5,
+  },
+  nearestStationText: {
+    fontSize: 12,
+    color: '#666',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmButton: {
+    flex: 1,
+    backgroundColor: '#DC3545',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  confirmButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  disabledButton: {
+    backgroundColor: '#ccc',
+  },
+  locationSubtext: {
+    fontSize: 12,
+    color: '#999',
+    marginLeft: 28,
+    marginTop: 2,
   },
 });
 

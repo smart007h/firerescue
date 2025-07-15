@@ -17,8 +17,9 @@ import { supabase } from '../config/supabaseClient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as Icons from '@expo/vector-icons';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
+import carIcon from '../assets/images/car.png';
 
 // Use a simpler conditional approach for icons
 const IconComponent = Platform.OS === 'web' ? Icons.FontAwesome : Icons.Ionicons;
@@ -35,16 +36,108 @@ export default function IncidentTrackingScreen() {
   const [responseStatus, setResponseStatus] = useState(null);
   const [isFirefighter, setIsFirefighter] = useState(false);
   const [locationAddress, setLocationAddress] = useState('');
+  const [dispatcherLocation, setDispatcherLocation] = useState(null);
+  const [routeCoordinates, setRouteCoordinates] = useState([]);
+  const [eta, setEta] = useState(null);
   const navigation = useNavigation();
   const route = useRoute();
   const { incidentId } = route.params;
   const mapRef = useRef(null);
   const flatListRef = useRef(null);
+  const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
     console.log('Loading incident with ID:', incidentId);
     loadInitialData();
+    // Subscribe to real-time updates for this incident
+    const channel = supabase.channel('incident-tracking-' + incidentId)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'incidents',
+          filter: `id=eq.${incidentId}`,
+        },
+        (payload) => {
+          // Only reload if status or dispatcher_id changed
+          if (
+            payload.new.status !== payload.old.status ||
+            payload.new.dispatcher_id !== payload.old.dispatcher_id
+          ) {
+            loadInitialData();
+          }
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [incidentId]);
+
+  useEffect(() => {
+    if (incident?.dispatcher_id && incidentLocation) {
+      const fetchDispatcherLocation = async () => {
+        const { data, error } = await supabase
+          .from('dispatcher_locations')
+          .select('latitude, longitude')
+          .eq('dispatcher_id', incident.dispatcher_id)
+          .single();
+        if (data) setDispatcherLocation({ latitude: data.latitude, longitude: data.longitude });
+      };
+      fetchDispatcherLocation();
+    }
+  }, [incident, incidentLocation]);
+
+  useEffect(() => {
+    const fetchRoute = async () => {
+      if (dispatcherLocation && incidentLocation) {
+        const apiKey = '<YOUR_GOOGLE_MAPS_API_KEY>';
+        const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${dispatcherLocation.latitude},${dispatcherLocation.longitude}&destination=${incidentLocation.latitude},${incidentLocation.longitude}&key=${apiKey}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data.routes && data.routes.length) {
+          const points = decodePolyline(data.routes[0].overview_polyline.points);
+          setRouteCoordinates(points);
+          // Extract ETA
+          const etaText = data.routes[0].legs[0]?.duration?.text;
+          setEta(etaText || null);
+        }
+      }
+    };
+    fetchRoute();
+  }, [dispatcherLocation, incidentLocation]);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => setCurrentUser(user));
+  }, []);
+
+  function decodePolyline(encoded) {
+    let points = [];
+    let index = 0, len = encoded.length;
+    let lat = 0, lng = 0;
+    while (index < len) {
+      let b, shift = 0, result = 0;
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      let dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+      lat += dlat;
+      shift = 0;
+      result = 0;
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      let dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+      lng += dlng;
+      points.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
+    }
+    return points;
+  }
 
   const getAddressFromCoordinates = async (latitude, longitude) => {
     try {
@@ -60,9 +153,9 @@ export default function IncidentTrackingScreen() {
       }
       
       // Use reverse geocoding to get address from coordinates
-      // Add a timeout to prevent hanging requests
+      // Increase timeout to 10 seconds
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
       
       try {
         const response = await fetch(
@@ -108,10 +201,14 @@ export default function IncidentTrackingScreen() {
         const data = await response.json();
         setLocationAddress(data.display_name || 'Address not available');
       } catch (fetchError) {
-        console.error('Error fetching address:', fetchError);
-        
-        // Fallback to a simpler format if geocoding fails
-        setLocationAddress(`Location: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          setLocationAddress('Address lookup timed out. Please try again.');
+          console.log('Geocoding request timed out');
+        } else {
+          console.error('Error fetching address:', fetchError);
+          setLocationAddress('Error getting address');
+        }
       }
     } catch (error) {
       console.error('Error converting coordinates to address:', error);
@@ -124,7 +221,8 @@ export default function IncidentTrackingScreen() {
       console.log('Starting to load initial data');
       setLoading(true);
       setError(null);
-      
+      // Always refresh session before loading incident details
+      await supabase.auth.getSession();
       // Get current session and refresh if needed
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
@@ -264,9 +362,10 @@ export default function IncidentTrackingScreen() {
         .from('firefighters')
         .select('*')
         .eq('id', session.user.id)
-        .single();
+        .maybeSingle();
 
-      if (firefighterError) {
+      if (firefighterError && firefighterError.code !== 'PGRST116') {
+        // Only log/handle real errors, not "no rows" error
         console.error('Error checking firefighter status:', firefighterError);
       } else {
         setIsFirefighter(!!firefighter);
@@ -337,6 +436,7 @@ export default function IncidentTrackingScreen() {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError) throw new Error(userError.message);
       if (!user) {
+        Alert.alert('Not logged in', 'Please log in to send messages.');
         setError('No authenticated user found');
         return;
       }
@@ -465,6 +565,10 @@ export default function IncidentTrackingScreen() {
     }
   };
 
+  // Allow chat if the current user is the reporter or assigned dispatcher and dispatcher_id is set
+  const isIncidentParticipant = currentUser && incident && !!incident.dispatcher_id &&
+    (currentUser.id === incident.reported_by || currentUser.id === incident.dispatcher_id);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -583,8 +687,9 @@ export default function IncidentTrackingScreen() {
           </View>
         </View>
         <TouchableOpacity
-          style={styles.chatButton}
-          onPress={() => navigation.navigate('IncidentChat', { incidentId })}
+          style={[styles.chatButton, !isIncidentParticipant && { opacity: 0.5 }]}
+          onPress={() => isIncidentParticipant && navigation.navigate('IncidentChat', { incidentId })}
+          disabled={!isIncidentParticipant}
         >
           <IconComponent name="chatbubble-ellipses" size={24} color="#fff" />
         </TouchableOpacity>
@@ -593,54 +698,61 @@ export default function IncidentTrackingScreen() {
       <ScrollView style={styles.content}>
         {/* Map Section */}
         <View style={styles.mapContainer}>
-          {Platform.OS === 'web' ? (
-            <View style={styles.webMapPlaceholder}>
-              <IconComponent name="map" size={40} color="#666" />
-              <Text style={styles.webMapText}>Map view is not available on web</Text>
-            </View>
+          {isIncidentParticipant ? (
+            Platform.OS === 'web' ? (
+              <View style={styles.webMapPlaceholder}>
+                <IconComponent name="map" size={40} color="#666" />
+                <Text style={styles.webMapText}>Map view is not available on web</Text>
+              </View>
+            ) : (
+              <MapView
+                ref={mapRef}
+                provider={PROVIDER_GOOGLE}
+                style={styles.map}
+                initialRegion={{
+                  latitude: incidentLocation?.latitude || 0,
+                  longitude: incidentLocation?.longitude || 0,
+                  latitudeDelta: 0.0922,
+                  longitudeDelta: 0.0421,
+                }}
+              >
+                {/* Incident Marker */}
+                {incidentLocation && (
+                  <Marker
+                    coordinate={incidentLocation}
+                    title="Incident"
+                    pinColor="red"
+                  />
+                )}
+                {/* Dispatcher Marker as Car Icon */}
+                {dispatcherLocation && (
+                  <Marker
+                    coordinate={dispatcherLocation}
+                    title="Dispatcher"
+                    image={carIcon}
+                  />
+                )}
+                {/* Route Polyline */}
+                {routeCoordinates.length > 0 && (
+                  <Polyline
+                    coordinates={routeCoordinates}
+                    strokeColor="#FF3B30"
+                    strokeWidth={8}
+                  />
+                )}
+              </MapView>
+            )
           ) : (
-            <MapView
-              ref={mapRef}
-              provider={PROVIDER_GOOGLE}
-              style={styles.map}
-              initialRegion={{
-                latitude: incidentLocation?.latitude || 0,
-                longitude: incidentLocation?.longitude || 0,
-                latitudeDelta: 0.0922,
-                longitudeDelta: 0.0421,
-              }}
-            >
-              {/* Incident Location Marker */}
-              {incidentLocation && (
-                <Marker
-                  coordinate={incidentLocation}
-                  title="Incident Location"
-                  pinColor="red"
-                />
-              )}
-              
-              {/* Firefighter Markers */}
-              {firefighters.map(firefighter => (
-                <Marker
-                  key={firefighter.id}
-                  coordinate={{
-                    latitude: firefighter.latitude,
-                    longitude: firefighter.longitude,
-                  }}
-                  title={`Firefighter ${firefighter.name}`}
-                  pinColor="#2563eb"
-                />
-              ))}
-
-              {/* Firefighter Location Marker */}
-              {firefighterLocation && (
-                <Marker
-                  coordinate={firefighterLocation}
-                  title="Firefighter Location"
-                  pinColor="blue"
-                />
-              )}
-            </MapView>
+            <View style={styles.webMapPlaceholder}>
+              <IconComponent name="lock-closed" size={40} color="#666" />
+              <Text style={styles.webMapText}>Tracking will be available when the incident is approved and assigned.</Text>
+            </View>
+          )}
+          {/* ETA Display */}
+          {isIncidentParticipant && eta && (
+            <View style={styles.etaContainer}>
+              <Text style={styles.etaText}>ETA: {eta}</Text>
+            </View>
           )}
         </View>
 
@@ -996,5 +1108,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  etaContainer: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    zIndex: 10,
+  },
+  etaText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 }); 

@@ -216,3 +216,133 @@ export const getCurrentUser = async () => {
     };
   }
 };
+
+// =====================================================
+// DISPATCHER AUTHENTICATION FUNCTIONS
+// =====================================================
+
+export const signInDispatcher = async (email, password) => {
+  try {
+    // First, check if the dispatcher exists in the dispatchers table
+    const { data: dispatcherData, error: dispatcherError } = await supabase
+      .from('dispatchers')
+      .select('*')
+      .eq('email', email)
+      .eq('password', password)
+      .eq('is_active', true)
+      .single();
+
+    if (dispatcherError || !dispatcherData) {
+      throw new Error('Invalid email or password');
+    }
+
+    // Try to authenticate with Supabase Auth (optional, for enhanced security)
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: dispatcherData.email,
+        password: dispatcherData.password,
+      });
+
+      if (authData?.session) {
+        // Store the auth session
+        await AsyncStorage.setItem('supabase-session', JSON.stringify(authData.session));
+      }
+    } catch (authError) {
+      // If auth fails, we can still proceed with dispatcher table authentication
+      console.log('Auth login failed, but dispatcher exists in table');
+    }
+
+    // Store dispatcher data
+    await AsyncStorage.setItem('dispatcherData', JSON.stringify(dispatcherData));
+    await AsyncStorage.setItem('userRole', 'dispatcher');
+    await AsyncStorage.setItem('userId', dispatcherData.id);
+    await AsyncStorage.setItem('userEmail', dispatcherData.email);
+
+    return { 
+      data: { 
+        dispatcher: dispatcherData,
+        role: 'dispatcher'
+      }, 
+      error: null 
+    };
+  } catch (error) {
+    console.error('Dispatcher sign in error:', error);
+    return { 
+      data: null, 
+      error: error instanceof Error ? error : new Error('Authentication failed') 
+    };
+  }
+};
+
+export const getCurrentDispatcher = async () => {
+  try {
+    // Check if user is logged in as dispatcher
+    const userRole = await AsyncStorage.getItem('userRole');
+    if (userRole !== 'dispatcher') {
+      return { data: null, error: null };
+    }
+
+    // Get dispatcher data from storage
+    const dispatcherDataStr = await AsyncStorage.getItem('dispatcherData');
+    if (!dispatcherDataStr) {
+      return { data: null, error: null };
+    }
+
+    const dispatcherData = JSON.parse(dispatcherDataStr);
+    
+    // Verify dispatcher still exists and is active
+    const { data: currentDispatcher, error: dispatcherError } = await supabase
+      .from('dispatchers')
+      .select('*')
+      .eq('id', dispatcherData.id)
+      .eq('is_active', true)
+      .single();
+
+    if (dispatcherError || !currentDispatcher) {
+      // Clear stored data if dispatcher no longer exists or is inactive
+      await AsyncStorage.removeItem('dispatcherData');
+      await AsyncStorage.removeItem('userRole');
+      await AsyncStorage.removeItem('userId');
+      await AsyncStorage.removeItem('userEmail');
+      return { data: null, error: null };
+    }
+
+    return { 
+      data: { 
+        dispatcher: currentDispatcher,
+        role: 'dispatcher'
+      }, 
+      error: null 
+    };
+  } catch (error) {
+    console.error('Get current dispatcher error:', error);
+    return { 
+      data: null, 
+      error: error instanceof Error ? error : new Error('Unknown error occurred') 
+    };
+  }
+};
+
+export const signOutDispatcher = async () => {
+  try {
+    // Clear dispatcher-specific stored data
+    await AsyncStorage.removeItem('dispatcherData');
+    await AsyncStorage.removeItem('userRole');
+    await AsyncStorage.removeItem('userId');
+    await AsyncStorage.removeItem('userEmail');
+    
+    // Also clear any auth session
+    await AsyncStorage.removeItem('supabase-session');
+    
+    // Sign out from Supabase Auth if there's a session
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.log('Auth sign out error (non-critical):', error);
+    }
+    
+    return { error: null };
+  } catch (error) {
+    console.error('Error signing out dispatcher:', error);
+    return { error };
+  }
+};

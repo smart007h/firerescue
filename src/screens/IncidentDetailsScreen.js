@@ -8,7 +8,7 @@ import {
   Alert,
   RefreshControl,
 } from 'react-native';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../config/supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
