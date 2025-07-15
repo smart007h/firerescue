@@ -1,125 +1,133 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  RefreshControl,
-} from 'react-native';
-import { supabase } from '../lib/supabase';
+import React, { useEffect, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { supabase } from '../config/supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { Picker } from '@react-native-picker/picker';
+import { useAuth } from '../context/AuthContext';
 
 const DispatcherDashboard = () => {
-  const navigation = useNavigation();
-  const [dispatcherData, setDispatcherData] = useState(null);
   const [activeIncidents, setActiveIncidents] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [selectedIncidentId, setSelectedIncidentId] = useState('');
+  const [dispatcherName, setDispatcherName] = useState('');
+  const [stationId, setStationId] = useState('');
+  const navigation = useNavigation();
+  const { signOut } = useAuth();
 
   useEffect(() => {
-    loadDispatcherData();
-    loadActiveIncidents();
+    fetchActiveIncidents();
+    fetchDispatcherInfo();
   }, []);
 
-  const loadDispatcherData = async () => {
+  const fetchActiveIncidents = async () => {
+    setRefreshing(true);
     try {
-      const data = await AsyncStorage.getItem('dispatcherData');
-      if (data) {
-        setDispatcherData(JSON.parse(data));
+      const dispatcherId = await AsyncStorage.getItem('userId');
+      if (!dispatcherId) {
+        setActiveIncidents([]);
+        setRefreshing(false);
+        return;
       }
-    } catch (error) {
-      console.error('Error loading dispatcher data:', error);
-    }
-  };
-
-  const loadActiveIncidents = async () => {
-    try {
       const { data, error } = await supabase
         .from('incidents')
         .select('*')
-        .eq('status', 'active')
+        .eq('dispatcher_id', dispatcherId)
+        .eq('status', 'in_progress')
         .order('created_at', { ascending: false });
-
       if (error) throw error;
       setActiveIncidents(data || []);
-    } catch (error) {
-      console.error('Error loading incidents:', error);
-      Alert.alert('Error', 'Failed to load active incidents');
+    } catch (err) {
+      setActiveIncidents([]);
     } finally {
-      setLoading(false);
       setRefreshing(false);
     }
   };
 
-  const onRefresh = React.useCallback(() => {
-    setRefreshing(true);
-    loadActiveIncidents();
-  }, []);
-
-  const handleLogout = async () => {
+  const fetchDispatcherInfo = async () => {
     try {
-      await supabase.auth.signOut();
-      await AsyncStorage.removeItem('dispatcherData');
-      await AsyncStorage.removeItem('userRole');
-      navigation.replace('LoginSelection');
-    } catch (error) {
-      console.error('Error logging out:', error);
-      Alert.alert('Error', 'Failed to logout');
+      const dispatcherData = await AsyncStorage.getItem('dispatcherData');
+      if (dispatcherData) {
+        const dispatcher = JSON.parse(dispatcherData);
+        setDispatcherName(dispatcher.name || '');
+        setStationId(dispatcher.station_id || '');
+      }
+    } catch (err) {
+      setDispatcherName('');
+      setStationId('');
     }
   };
 
-  const handleNewIncident = () => {
-    navigation.navigate('NewIncident');
+  const onRefresh = () => {
+    fetchActiveIncidents();
   };
 
   const handleViewIncident = (incident) => {
-    navigation.navigate('IncidentDetails', { incident });
+    navigation.navigate('DispatchTrackingScreen', { incidentId: incident.id, incident });
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text>Loading dashboard...</Text>
-      </View>
-    );
-  }
+  const handleTrackIncident = () => {
+    const incident = activeIncidents.find((i) => i.id === selectedIncidentId);
+    if (incident) {
+      navigation.navigate('DispatchTrackingScreen', { incidentId: incident.id, incident });
+    }
+  };
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.welcomeText}>
-            Welcome, {dispatcherData?.name || 'Dispatcher'}
-          </Text>
-          <Text style={styles.stationText}>
-            {dispatcherData?.station_id} - {dispatcherData?.region}
-          </Text>
+          <Text style={styles.welcomeText}>Welcome!</Text>
+          {dispatcherName ? (
+            <Text style={styles.dispatcherInfo}>
+              {dispatcherName} {stationId ? `| Station ID: ${stationId}` : ''}
+            </Text>
+          ) : null}
         </View>
-        <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-          <Icon name="logout" size={24} color="#FF3B30" />
+        <TouchableOpacity style={styles.logoutButton} onPress={signOut}>
+          <Ionicons name="log-out-outline" size={24} color="#DC3545" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Incident Picker Card */}
+      <View style={styles.pickerCard}>
+        <Text style={styles.pickerLabel}>Select Incident to Track</Text>
+        <Picker
+          selectedValue={selectedIncidentId}
+          style={styles.picker}
+          onValueChange={(itemValue) => setSelectedIncidentId(itemValue)}
+          enabled={activeIncidents.length > 0}
+        >
+          <Picker.Item label="Select Incident" value="" />
+          {activeIncidents.map((incident) => (
+            <Picker.Item
+              key={incident.id}
+              label={`${incident.type || incident.incident_type || 'Incident'} (${incident.location})`}
+              value={incident.id}
+            />
+          ))}
+        </Picker>
+        <TouchableOpacity
+          style={[styles.trackButton, { opacity: selectedIncidentId ? 1 : 0.5 }]}
+          onPress={handleTrackIncident}
+          disabled={!selectedIncidentId}
+        >
+          <Ionicons name="navigate" size={24} color="#fff" />
+          <Text style={styles.trackButtonText}>Track Incident</Text>
         </TouchableOpacity>
       </View>
 
       {/* Quick Actions */}
-      <View style={styles.quickActions}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={handleNewIncident}
-        >
-          <Icon name="plus-circle" size={32} color="#007AFF" />
+      <View style={styles.quickActionsRow}>
+        <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('DispatchNewIncidentScreen')}>
+          <Ionicons name="add-circle" size={32} color="#34C759" />
           <Text style={styles.actionText}>New Incident</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => navigation.navigate('IncidentHistory')}
-        >
-          <Icon name="history" size={32} color="#007AFF" />
-          <Text style={styles.actionText}>History</Text>
+        <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('DispatchIncidentHistory')}>
+          <Ionicons name="time" size={32} color="#FF9500" />
+          <Text style={styles.actionText}>Incident History</Text>
         </TouchableOpacity>
       </View>
 
@@ -142,7 +150,7 @@ const DispatcherDashboard = () => {
                 onPress={() => handleViewIncident(incident)}
               >
                 <View style={styles.incidentHeader}>
-                  <Text style={styles.incidentType}>{incident.type}</Text>
+                  <Text style={styles.incidentType}>{incident.type || incident.incident_type || 'Incident'}</Text>
                   <Text style={styles.incidentTime}>
                     {new Date(incident.created_at).toLocaleTimeString()}
                   </Text>
@@ -156,7 +164,7 @@ const DispatcherDashboard = () => {
                     Status: {incident.status}
                   </Text>
                   <Text style={styles.incidentPriority}>
-                    Priority: {incident.priority}
+                    Priority: {incident.priority || 'N/A'}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -286,6 +294,58 @@ const styles = StyleSheet.create({
   incidentPriority: {
     fontSize: 14,
     color: '#FF3B30',
+  },
+  pickerCard: {
+    backgroundColor: '#fff',
+    marginHorizontal: 20,
+    marginTop: 20,
+    padding: 16,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2,
+    alignItems: 'center',
+  },
+  pickerLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+    color: '#333',
+  },
+  picker: {
+    width: '100%',
+    minWidth: 200,
+    marginBottom: 12,
+  },
+  trackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#007AFF',
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  trackButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  quickActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 20,
+    marginBottom: 10,
+    paddingHorizontal: 20,
+  },
+  dispatcherInfo: {
+    fontSize: 15,
+    color: '#666',
+    marginTop: 2,
+    fontWeight: '500',
   },
 });
 

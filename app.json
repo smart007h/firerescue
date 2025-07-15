@@ -1,73 +1,49 @@
 {
   "expo": {
-    "name": "fireRescue",
-    "slug": "fireRescue",
+    "name": "FireRescue",
+    "slug": "fire-rescue",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./src/assets/images/logo.jpeg",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./src/assets/images/logo.jpeg",
       "resizeMode": "contain",
-      "backgroundColor": "#FFE6E6"
+      "backgroundColor": "#ffffff"
     },
     "assetBundlePatterns": [
-      "src/assets/images/*",
-      "src/assets/sounds/*"
+      "**/*"
     ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.firerescue.app",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "FireRescue needs access to your location to report incidents and find the nearest fire station.",
-        "NSLocationAlwaysUsageDescription": "FireRescue needs access to your location to report incidents and find the nearest fire station.",
-        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to access your microphone for voice calls.",
-        "UIBackgroundModes": ["audio"],
-        "NSCameraUsageDescription": "Allow $(PRODUCT_NAME) to access your camera for video calls."
+        "NSLocationWhenInUseUsageDescription": "This app needs access to location to find the nearest fire station and provide accurate incident reporting.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs access to location to find the nearest fire station and provide accurate incident reporting."
       }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./src/assets/images/logo.jpeg",
-        "backgroundColor": "#FFE6E6"
+        "backgroundColor": "#FFFFFF"
       },
       "package": "com.firerescue.app",
       "permissions": [
-        "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.CAMERA",
-        "android.permission.ACCESS_NETWORK_STATE",
-        "android.permission.CHANGE_NETWORK_STATE",
-        "android.permission.INTERNET"
-      ]
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E"
+        }
+      }
     },
     "web": {
-      "bundler": "metro",
-      "favicon": "./src/assets/images/logo.jpeg"
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-secure-store",
-      [
-        "expo-location",
-        {
-          "locationAlwaysAndWhenInUsePermission": "Allow FireRescue to use your location to report incidents and find the nearest fire station."
-        }
-      ],
-      [
-        "expo-av",
-        {
-          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone for voice calls."
-        }
-      ]
-    ],
-    "platforms": [
-      "ios",
-      "android",
-      "web"
-    ],
-    "entryPoint": "./index.js",
-    "newArchEnabled": true
+      "expo-location",
+      "expo-image-picker"
+    ]
   }
 }

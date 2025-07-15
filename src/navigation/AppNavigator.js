@@ -34,13 +34,19 @@ import NewIncidentScreen from '../screens/NewIncidentScreen';
 import IncidentDetailsScreen from '../screens/IncidentDetailsScreen';
 import IncidentHistoryScreen from '../screens/IncidentHistoryScreen';
 import MenuScreen from '../screens/MenuScreen';
-import BookTrainingScreen from '../screens/BookTrainingScreen';
+import UserBookingTrainingScreen from '../screens/UserBookingTrainingScreen';
 import RateServiceScreen from '../screens/RateServiceScreen';
-import TrainingBookingsScreen from '../screens/TrainingBookingsScreen';
+import FirefighterTrainingApprovalScreen from '../screens/FirefighterTrainingApprovalScreen';
 import UserNotificationsScreen from '../screens/UserNotificationsScreen';
 import CallLogsScreen from '../screens/CallLogsScreen';
 import { getCurrentUser, initializeAuth } from '../services/auth';
 import FirefighterNotificationsScreen from '../screens/FirefighterNotificationsScreen';
+import DispatchIncidentHistoryScreen from '../screens/DispatchIncidentHistoryScreen';
+import DispatchTrackingScreen from '../screens/DispatchTrackingScreen';
+import DispatchIncidentDetailsScreen from '../screens/DispatchIncidentDetailsScreen';
+import DispatchNewIncidentScreen from '../screens/DispatchNewIncidentScreen';
+import { useAuth } from '../context/AuthContext';
+import CustomSplashScreen from '../components/SplashScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -128,6 +134,7 @@ const FirefighterTabNavigator = () => (
         tabBarIcon: ({ color, size }) => (
           <Ionicons name="home" size={size} color={color} />
         ),
+        title: 'Welcome back!',
       }}
     />
     <Tab.Screen
@@ -195,8 +202,10 @@ const MainStack = () => (
     <Stack.Screen name="FirefighterLogin" component={FirefighterLoginScreen} />
     <Stack.Screen name="DispatcherLogin" component={DispatcherLoginScreen} />
     <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+    <Stack.Screen name="UserSelectionScreen" component={UserSelectionScreen} />
     <Stack.Screen name="UserMain" component={UserTabNavigator} />
     <Stack.Screen name="FirefighterMain" component={FirefighterTabNavigator} />
+    <Stack.Screen name="FirefighterHome" component={FirefighterHomeScreen} />
     <Stack.Screen name="SafetyGuidelines" component={SafetyGuidelinesScreen} />
     <Stack.Screen name="IncidentTracking" component={IncidentTrackingScreen} />
     <Stack.Screen name="EditProfile" component={EditProfileScreen} />
@@ -204,10 +213,9 @@ const MainStack = () => (
     <Stack.Screen name="NewIncident" component={NewIncidentScreen} />
     <Stack.Screen name="IncidentDetails" component={IncidentDetailsScreen} />
     <Stack.Screen name="UserReportHistory" component={UserReportHistoryScreen} />
-    <Stack.Screen name="FirefighterIncidentDetails" component={FirefighterIncidentScreen} />
+    <Stack.Screen name="FirefighterIncidentDetails" component={IncidentDetailsScreen} />
     <Stack.Screen name="IncidentChat" component={IncidentChatScreen} />
-    <Stack.Screen name="TrainingBookings" component={TrainingBookingsScreen} />
-    <Stack.Screen name="CallLogs" component={CallLogsScreen} />
+    <Stack.Screen name="FirefighterTrainingApproval" component={FirefighterTrainingApprovalScreen} />
     <Stack.Screen
       name="UserNotifications"
       component={UserNotificationsScreen}
@@ -219,6 +227,11 @@ const MainStack = () => (
         headerTintColor: '#fff',
       }}
     />
+    <Stack.Screen name="DispatchIncidentHistory" component={DispatchIncidentHistoryScreen} />
+    <Stack.Screen name="DispatcherDashboard" component={DispatcherDashboard} />
+    <Stack.Screen name="DispatchTrackingScreen" component={DispatchTrackingScreen} />
+    <Stack.Screen name="DispatchIncidentDetailsScreen" component={DispatchIncidentDetailsScreen} />
+    <Stack.Screen name="DispatchNewIncidentScreen" component={DispatchNewIncidentScreen} />
   </Stack.Navigator>
 );
 
@@ -235,63 +248,77 @@ const DrawerNavigator = () => (
   >
     <Drawer.Screen name="MainStack" component={MainStack} />
     <Drawer.Screen name="SafetyGuidelines" component={SafetyGuidelinesScreen} />
-    <Drawer.Screen name="BookTraining" component={BookTrainingScreen} />
+    <Drawer.Screen name="BookTraining" component={UserBookingTrainingScreen} />
     <Drawer.Screen name="RateService" component={RateServiceScreen} />
+    <Drawer.Screen name="FirefighterTrainingApproval" component={FirefighterTrainingApprovalScreen} />
   </Drawer.Navigator>
 );
 
 const AppNavigator = () => {
-  const [isLoading, setIsLoading] = useState(true);
-  const [user, setUser] = useState(null);
-  const [initialRoute, setInitialRoute] = useState('Welcome');
+  const { userRole, loading } = useAuth();
+  const [splashDone, setSplashDone] = React.useState(false);
 
-  useEffect(() => {
-    async function checkAuth() {
-      try {
-        await initializeAuth();
-        
-        // Check if there's a stored session
-        const sessionStr = await AsyncStorage.getItem('supabase-session');
-        const userDataStr = await AsyncStorage.getItem('userData');
-        
-        if (sessionStr && userDataStr) {
-          const session = JSON.parse(sessionStr);
-          const userData = JSON.parse(userDataStr);
-          
-          // Set the user and navigate to the appropriate screen
-          setUser({
-            ...userData,
-            session: session
-          });
-          
-          // Navigate to DrawerNavigator with the appropriate initial screen
-          setInitialRoute('DrawerNavigator');
-        } else {
-          setInitialRoute('Welcome');
-        }
-      } catch (error) {
-        console.error('Auth initialization error:', error);
-        setInitialRoute('Welcome');
-      } finally {
-        setIsLoading(false);
-      }
-    }
+  console.log('[AppNavigator] userRole:', userRole, 'loading:', loading, 'splashDone:', splashDone);
 
-    checkAuth();
-  }, []);
-
-  if (isLoading) {
-    return <LoadingScreen />;
+  if (loading || !splashDone) {
+    return <CustomSplashScreen onFinish={() => setSplashDone(true)} />;
   }
 
+  if (userRole === 'dispatcher') {
+    // Only allow dispatcher screens
+    return (
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="DispatcherDashboard" component={DispatcherDashboard} />
+        <Stack.Screen name="DispatchTrackingScreen" component={DispatchTrackingScreen} />
+        <Stack.Screen name="DispatchIncidentDetailsScreen" component={DispatchIncidentDetailsScreen} />
+        <Stack.Screen name="DispatchNewIncidentScreen" component={DispatchNewIncidentScreen} />
+        <Stack.Screen name="DispatchIncidentHistory" component={DispatchIncidentHistoryScreen} />
+        <Stack.Screen name="IncidentChat" component={IncidentChatScreen} />
+      </Stack.Navigator>
+    );
+  }
+
+  if (userRole === 'user') {
+    // Only allow user screens, wrapped in a Drawer Navigator
+    return (
+      <Drawer.Navigator
+        screenOptions={{
+          headerShown: false,
+          drawerStyle: {
+            backgroundColor: '#FFF5F5',
+            width: '80%',
+          },
+        }}
+      >
+        <Drawer.Screen name="UserMain" component={UserTabNavigator} />
+        <Drawer.Screen name="MenuScreen" component={MenuScreen} options={{ title: 'Menu' }} />
+        <Drawer.Screen name="SafetyGuidelines" component={SafetyGuidelinesScreen} options={{ title: 'Safety Guidelines' }} />
+        <Drawer.Screen name="BookTraining" component={UserBookingTrainingScreen} options={{ title: 'Book Training Session' }} />
+        <Drawer.Screen name="UserNotifications" component={UserNotificationsScreen} options={{ title: 'Notifications' }} />
+        <Drawer.Screen name="RateService" component={RateServiceScreen} options={{ title: 'Rate Our Service' }} />
+        <Drawer.Screen name="UserReportHistory" component={UserReportHistoryScreen} options={{ title: 'Report History' }} />
+        <Drawer.Screen name="IncidentDetails" component={IncidentDetailsScreen} options={{ title: 'Incident Details' }} />
+        <Drawer.Screen name="IncidentTracking" component={IncidentTrackingScreen} options={{ title: 'Incident Tracking' }} />
+        <Drawer.Screen name="IncidentChat" component={IncidentChatScreen} options={{ title: 'Incident Chat' }} />
+        {/* Add more Drawer.Screen for other user features if needed */}
+      </Drawer.Navigator>
+    );
+  }
+
+  if (userRole === 'firefighter') {
+    console.log('[AppNavigator] Rendering firefighter stack!');
+    // Only allow firefighter screens
+    return (
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="FirefighterMain" component={FirefighterTabNavigator} />
+        {/* Add other firefighter screens as needed */}
+      </Stack.Navigator>
+    );
+  }
+
+  // If no role, show login/welcome
   return (
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        animation: 'slide_from_right'
-      }}
-      initialRouteName={initialRoute}
-    >
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Welcome" component={WelcomeScreen} />
       <Stack.Screen name="LoginSelection" component={LoginSelectionScreen} />
       <Stack.Screen name="UserLogin" component={UserLoginScreen} />
@@ -299,18 +326,7 @@ const AppNavigator = () => {
       <Stack.Screen name="FirefighterLogin" component={FirefighterLoginScreen} />
       <Stack.Screen name="DispatcherLogin" component={DispatcherLoginScreen} />
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-      <Stack.Screen name="UserSelection" component={UserSelectionScreen} />
-      <Stack.Screen name="DispatcherDashboard" component={DispatcherDashboard} />
-      <Stack.Screen 
-        name="DrawerNavigator" 
-        component={DrawerNavigator}
-        initialParams={user ? {
-          screen: 'MainStack',
-          params: {
-            screen: user?.profile?.role === 'firefighter' ? 'FirefighterMain' : 'UserMain'
-          }
-        } : undefined}
-      />
+      <Stack.Screen name="UserSelectionScreen" component={UserSelectionScreen} />
     </Stack.Navigator>
   );
 };

@@ -10,6 +10,9 @@ import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } f
 import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StyleSheet } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from './src/config/supabaseClient';
+import { AuthProvider } from './src/context/AuthContext';
 
 // Import your navigation and other components
 import AppNavigator from './src/navigation/AppNavigator';
@@ -21,16 +24,19 @@ export const RefreshContext = createContext();
 // Prevent the splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();
 
+const PERSISTENCE_KEY = 'NAVIGATION_STATE_V1';
+
 export default function App() {
   const [isReady, setIsReady] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [initialState, setInitialState] = useState();
 
   const refreshApp = () => {
     setRefreshKey(prevKey => prevKey + 1);
   };
 
   useEffect(() => {
-    async function loadFonts() {
+    async function loadFontsAndNavState() {
       try {
         await Font.loadAsync({
           'Inter-Regular': Inter_400Regular,
@@ -38,14 +44,30 @@ export default function App() {
           'Inter-SemiBold': Inter_600SemiBold,
           'Inter-Bold': Inter_700Bold,
         });
+        // Restore navigation state
+        const savedStateString = await AsyncStorage.getItem(PERSISTENCE_KEY);
+        const state = savedStateString ? JSON.parse(savedStateString) : undefined;
+        if (state !== undefined) {
+          setInitialState(state);
+        }
         setIsReady(true);
         SplashScreen.hideAsync();
       } catch (error) {
-        console.error('Error loading fonts:', error);
+        console.error('Error loading fonts or nav state:', error);
       }
     }
-    
-    loadFonts();
+    loadFontsAndNavState();
+  }, []);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        console.log('No session found on app start');
+        // Optionally, redirect to login or show a message
+      } else {
+        console.log('Session restored on app start:', session);
+      }
+    });
   }, []);
 
   const theme = {
@@ -103,12 +125,19 @@ export default function App() {
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
         <PaperProvider theme={theme}>
+          <AuthProvider>
           <RefreshContext.Provider value={{ refreshApp }}>
-            <NavigationContainer>
+            <NavigationContainer
+              initialState={initialState}
+              onStateChange={state =>
+                AsyncStorage.setItem(PERSISTENCE_KEY, JSON.stringify(state))
+              }
+            >
               <AppNavigator key={refreshKey} />
               <StatusBar style="auto" />
             </NavigationContainer>
           </RefreshContext.Provider>
+          </AuthProvider>
         </PaperProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

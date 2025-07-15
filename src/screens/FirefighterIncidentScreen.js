@@ -5,6 +5,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../config/supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getAddressFromCoordinates } from '../services/locationService';
+import { useFocusEffect } from '@react-navigation/native';
 
 const FirefighterIncidentScreen = ({ route, navigation }) => {
   const [loading, setLoading] = useState(true);
@@ -13,6 +15,7 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
   const [incidents, setIncidents] = useState([]);
   const [filteredIncidents, setFilteredIncidents] = useState([]);
   const [reporter, setReporter] = useState(null);
+  const [dispatcher, setDispatcher] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState(route.params?.initialFilter || 'all');
@@ -22,6 +25,9 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const flatListRef = useRef(null);
   const scrollY = useRef(new Animated.Value(0)).current;
+
+  const SUPABASE_FUNCTION_URL = 'https://agpxjkmubrrtkxfhjmjm.functions.supabase.co/assign-incident'; // TODO: Replace with your project ref
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFncHhqa211YnJydGt4ZmhqbWptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIzMDQxMjMsImV4cCI6MjA1Nzg4MDEyM30.Lo5yTS9q05WZqifn9Y-z-dau3oCs24S1qgCuHtVFMqM';
 
   useEffect(() => {
     if (incidentId) {
@@ -49,6 +55,16 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
     filterIncidents();
   }, [selectedStatus, searchQuery, incidents]);
 
+  // Add this useFocusEffect to reset filter state on focus/param change
+  useFocusEffect(
+    React.useCallback(() => {
+      if (route.params?.initialFilter) {
+        setSelectedStatus(route.params.initialFilter);
+      }
+      // Optionally, reset searchQuery or other state here if needed
+    }, [route.params?.initialFilter])
+  );
+
   const filterIncidents = () => {
     let filtered = [...incidents];
 
@@ -58,6 +74,16 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
         filtered = filtered.filter(incident => 
           ['resolved', 'cancelled', 'completed', 'rejected'].includes(incident.status)
         );
+        // If resolvedToday is set, filter for only today's resolved incidents
+        if (route.params?.resolvedToday) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          filtered = filtered.filter(incident => {
+            if (!incident.resolved_at) return false;
+            const resolvedDate = new Date(incident.resolved_at);
+            return resolvedDate >= today;
+          });
+        }
       } else {
         filtered = filtered.filter(incident => incident.status === selectedStatus);
       }
@@ -106,7 +132,7 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
       const session = JSON.parse(sessionStr);
       
       // Check if session is expired
-      if (session.expires_at < new Date().getTime()) {
+      if (session.expires_at * 1000 < Date.now()) {
         console.log('Session expired');
         await handleSessionExpiration();
         return false;
@@ -149,53 +175,25 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
     try {
       setLoading(true);
       setError(null);
-      
       const stationId = await AsyncStorage.getItem('stationId');
-      console.log('Loading incidents for station:', stationId);
-      
-      if (!stationId) {
-        throw new Error('No station ID found');
-      }
-
+      if (!stationId) throw new Error('No station ID found');
       const isSessionValid = await checkAndRefreshSession();
-      if (!isSessionValid) {
-        return;
-      }
-
-      console.log('Querying incidents table...');
+      if (!isSessionValid) return;
+      // Query by updated_at DESC, then created_at DESC as fallback
       const { data: incidents, error: incidentsError } = await supabase
         .from('incidents')
-        .select(`
-          *,
-          incident_responses!left (
-            id,
-            status,
-            response_time,
-            firefighter_id
-          )
-        `)
+        .select(`*, incident_responses!left (id, status, response_time, firefighter_id)`)
         .eq('station_id', stationId)
+        .order('updated_at', { ascending: false })
         .order('created_at', { ascending: false });
-
-      if (incidentsError) {
-        console.error('Error fetching incidents:', incidentsError);
-        throw new Error(incidentsError.message || 'Failed to load incidents');
-      }
-
-      if (!incidents) {
-        console.log('No incidents found');
-        setIncidents([]);
-        return;
-      }
-
+      if (incidentsError) throw new Error(incidentsError.message || 'Failed to load incidents');
+      if (!incidents) { setIncidents([]); return; }
       const transformedData = incidents.map(incident => ({
         ...incident,
         responseStatus: incident.incident_responses?.[0]?.status || 'pending',
         responseId: incident.incident_responses?.[0]?.id,
         responseTime: incident.incident_responses?.[0]?.response_time
       }));
-
-      // Format locations for all incidents
       const incidentsWithFormattedLocations = await Promise.all(
         transformedData.map(async (incident) => {
           if (incident.location) {
@@ -205,11 +203,13 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
           return incident;
         })
       );
-
       setIncidents(incidentsWithFormattedLocations);
       setFilteredIncidents(incidentsWithFormattedLocations);
+      // Scroll to top after reload
+      if (flatListRef.current) {
+        flatListRef.current.scrollToOffset({ offset: 0, animated: true });
+      }
     } catch (err) {
-      console.error('Error in loadAllIncidents:', err);
       setError(err.message || 'Failed to load incidents');
     } finally {
       setLoading(false);
@@ -247,7 +247,8 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
             status,
             response_time,
             firefighter_id
-          )
+          ),
+          dispatcher_id
         `)
         .eq('id', incidentId)
         .single();
@@ -279,6 +280,21 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
           console.error('Error fetching reporter details:', reporterError);
         } else if (reporterData) {
           setReporter(reporterData);
+        }
+      }
+
+      if (incidentData.dispatcher_id) {
+        try {
+          const { data: dispatcherData, error: dispatcherError } = await supabase
+            .from('dispatchers')
+            .select('dispatcher_id, name, phone, email, role, type')
+            .eq('dispatcher_id', incidentData.dispatcher_id)
+            .single();
+          if (!dispatcherError && dispatcherData) {
+            setDispatcher(dispatcherData);
+          }
+        } catch (dispatcherError) {
+          console.error('Error fetching dispatcher details:', dispatcherError);
         }
       }
     } catch (err) {
@@ -318,35 +334,19 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
   const handleApproveIncident = async (incidentId) => {
     try {
       const isSessionValid = await checkAndRefreshSession();
-      if (!isSessionValid) {
-        return;
-      }
-
-      // Get current firefighter's ID from stationData
+      if (!isSessionValid) return;
       const stationDataStr = await AsyncStorage.getItem('stationData');
-      if (!stationDataStr) {
-        throw new Error('No station data found');
-      }
+      if (!stationDataStr) throw new Error('No station data found');
       const stationData = JSON.parse(stationDataStr);
       const firefighterId = stationData.id;
-
-      if (!firefighterId) {
-        throw new Error('No firefighter ID found in station data');
-      }
-
-      console.log('Approving incident with firefighter ID:', firefighterId);
-
+      const stationId = stationData.station_id;
+      if (!firefighterId) throw new Error('No firefighter ID found in station data');
       // Update incident status
       const { error: incidentError } = await supabase
         .from('incidents')
-        .update({ 
-          status: 'in_progress',
-          updated_at: new Date().toISOString()
-        })
+        .update({ status: 'in_progress', updated_at: new Date().toISOString() })
         .eq('id', incidentId);
-
       if (incidentError) throw incidentError;
-
       // Check for existing response
       const { data: existingResponse, error: responseError } = await supabase
         .from('incident_responses')
@@ -354,44 +354,79 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
         .eq('incident_id', incidentId)
         .eq('firefighter_id', firefighterId)
         .single();
-
-      if (responseError && responseError.code !== 'PGRST116') { // PGRST116 is "not found"
-        throw responseError;
-      }
-
+      if (responseError && responseError.code !== 'PGRST116') throw responseError;
       if (existingResponse) {
-        // Update existing response
         const { error: updateError } = await supabase
           .from('incident_responses')
-          .update({ 
-            status: 'in_progress',
-            updated_at: new Date().toISOString()
-          })
+          .update({ status: 'in_progress', updated_at: new Date().toISOString() })
           .eq('id', existingResponse.id)
           .eq('firefighter_id', firefighterId);
-
         if (updateError) throw updateError;
       } else {
-        // Create new response
         const { error: insertError } = await supabase
           .from('incident_responses')
-          .insert([{
-            incident_id: incidentId,
-            firefighter_id: firefighterId,
-            status: 'in_progress',
-            response_time: new Date().toISOString()
-          }]);
-
-        if (insertError) {
-          console.error('Error inserting incident response:', insertError);
-          throw insertError;
+          .insert([{ incident_id: incidentId, firefighter_id: firefighterId, status: 'in_progress', response_time: new Date().toISOString() }]);
+        if (insertError) throw insertError;
+      }
+      // Fetch incident details for location
+      const { data: incidentDetails, error: fetchError } = await supabase
+        .from('incidents')
+        .select('id, location, station_id')
+        .eq('id', incidentId)
+        .single();
+      if (fetchError) throw fetchError;
+      let incident_lat = null, incident_lng = null;
+      if (incidentDetails && incidentDetails.location) {
+        const coords = incidentDetails.location.split(',');
+        if (coords.length === 2) {
+          incident_lat = parseFloat(coords[0]);
+          incident_lng = parseFloat(coords[1]);
         }
       }
-      
-      await loadAllIncidents();
-      Alert.alert('Success', 'Incident approved successfully');
+      // Call the assign-incident Edge Function
+      let assignmentSuccess = false;
+      let assignmentMessage = '';
+      try {
+        const response = await fetch(SUPABASE_FUNCTION_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({
+            incident_id: incidentId,
+            incident_lat,
+            incident_lng,
+            station_id: stationId
+          })
+        });
+        const result = await response.json();
+        if (response.ok && result.assigned_dispatcher) {
+          assignmentSuccess = true;
+          assignmentMessage = 'Incident approved and successfully assigned to dispatcher.';
+        } else {
+          assignmentMessage = result.error ? `Incident approved, but not assigned to dispatcher: ${result.error}` : 'Incident approved, but not assigned to dispatcher.';
+        }
+      } catch (assignError) {
+        assignmentMessage = 'Incident approved, but failed to assign dispatcher.';
+      }
+      // Show the alert and reload the list after user dismisses
+      Alert.alert(
+        'Incident Approval',
+        assignmentMessage,
+        [
+          {
+            text: 'OK',
+            onPress: async () => {
+              await loadAllIncidents();
+              if (flatListRef.current) {
+                flatListRef.current.scrollToOffset({ offset: 0, animated: true });
+              }
+            }
+          }
+        ]
+      );
     } catch (error) {
-      console.error('Error approving incident:', error);
       Alert.alert('Error', error.message || 'Failed to approve incident');
     }
   };
@@ -436,59 +471,31 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
 
   const formatLocation = async (location) => {
     if (!location) return 'Location not available';
-    
     // If location is already a readable address, return it
     if (!location.includes(',')) return location;
-    
     try {
-      // Split coordinates
-      const [lat, lng] = location.split(',').map(coord => parseFloat(coord.trim()));
-      
-      // Mock location names based on coordinates
-      // This is a temporary solution until we integrate with a proper geocoding service
-      const mockLocations = {
-        'Mountain View': { lat: 37.3861, lng: -122.0839 },
-        'Palo Alto': { lat: 37.4419, lng: -122.1430 },
-        'Sunnyvale': { lat: 37.3688, lng: -122.0363 },
-        'San Jose': { lat: 37.3382, lng: -121.8863 },
-        'Santa Clara': { lat: 37.3541, lng: -121.9552 },
-        'Cupertino': { lat: 37.3229, lng: -122.0322 },
-        'Redwood City': { lat: 37.4852, lng: -122.2364 },
-        'Menlo Park': { lat: 37.4538, lng: -122.1817 },
-      };
-
-      // Find the closest city based on coordinates
-      let closestCity = null;
-      let shortestDistance = Infinity;
-
-      Object.entries(mockLocations).forEach(([city, coords]) => {
-        const distance = Math.sqrt(
-          Math.pow(lat - coords.lat, 2) + Math.pow(lng - coords.lng, 2)
-        );
-        if (distance < shortestDistance) {
-          shortestDistance = distance;
-          closestCity = city;
+      // Check if location is in coordinate format (contains comma and numbers)
+      if (location.includes(',') && /^-?\d+\.?\d*,-?\d+\.?\d*$/.test(location.replace(/\s/g, ''))) {
+        const [lat, lng] = location.split(',').map(Number);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          // Use Google Maps Geocoding API instead of getAddressFromCoordinates
+          const apiKey = 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E';
+          const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`;
+          try {
+            const response = await fetch(url);
+            const data = await response.json();
+            if (data.status === 'OK' && data.results.length > 0) {
+              return data.results[0].formatted_address;
+            }
+            return 'Location not available';
+          } catch (error) {
+            console.error('Google Geocoding API error:', error);
+            return 'Location not available';
+          }
         }
-      });
-
-      // Return a more natural-sounding location
-      if (closestCity) {
-        const landmarks = [
-          'near Downtown',
-          'by the Shopping Center',
-          'near the Park',
-          'in the Business District',
-          'by the Community Center',
-          'near the Library',
-          'in the Residential Area',
-          'by the Transit Center'
-        ];
-        const randomLandmark = landmarks[Math.floor(Math.random() * landmarks.length)];
-        return `${closestCity}, ${randomLandmark}`;
       }
-
-      // Fallback to a more natural coordinate format if no city match
-      return `Location in ${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E area`;
+      // If it's not coordinates, return as is
+      return location;
     } catch (error) {
       console.error('Error formatting location:', error);
       // Fallback to original location if there's an error
@@ -902,7 +909,7 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
               navigation.goBack();
             } else {
               // If we're in the tab view, navigate to the list
-              navigation.navigate('FirefighterIncident');
+              navigation.navigate('Incidents');
             }
           }}
         >
@@ -960,6 +967,20 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
                 <Text style={styles.reporterContact}>
                   {reporter.phone || 'No contact provided'}
                 </Text>
+              </View>
+            )}
+
+            {dispatcher && (
+              <View style={styles.reporterSection}>
+                <Text style={styles.reporterTitle}>Assigned Dispatcher</Text>
+                <Text style={styles.reporterName}>{dispatcher.name || 'N/A'}</Text>
+                {dispatcher.role && (
+                  <Text style={styles.reporterContact}>Type: {dispatcher.role}</Text>
+                )}
+                {dispatcher.type && !dispatcher.role && (
+                  <Text style={styles.reporterContact}>Type: {dispatcher.type}</Text>
+                )}
+                <Text style={styles.reporterContact}>{dispatcher.phone || dispatcher.email || 'No contact provided'}</Text>
               </View>
             )}
 

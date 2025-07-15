@@ -17,8 +17,11 @@ import { Picker } from '@react-native-picker/picker';
 import { createTrainingBooking, getStations } from '../services/trainingBookings';
 import { getCurrentUser } from '../services/auth';
 import { supabase } from '../services/supabase';
+import { getCurrentLocation, calculateDistance, findNearestStation } from '../services/locationService';
+import Modal from 'react-native-modal';
+import { useFocusEffect } from '@react-navigation/native';
 
-const BookTrainingScreen = ({ navigation }) => {
+const UserBookingTrainingScreen = ({ navigation }) => {
   const [companyName, setCompanyName] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTime, setSelectedTime] = useState(new Date());
@@ -29,10 +32,34 @@ const BookTrainingScreen = ({ navigation }) => {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [autoSelectingStation, setAutoSelectingStation] = useState(false);
+  const [locationFetched, setLocationFetched] = useState(false);
+  const [showStationModal, setShowStationModal] = useState(false);
 
   useEffect(() => {
     loadStations();
   }, []);
+
+  useEffect(() => {
+    const autoSelectNearestStation = async () => {
+      if (!selectedStation && !locationFetched) {
+        setAutoSelectingStation(true);
+        try {
+          const coords = await getCurrentLocation();
+          const nearest = await findNearestStation(coords.latitude, coords.longitude);
+          if (nearest) {
+            setSelectedStation(nearest);
+          }
+        } catch (err) {
+          setError('Could not auto-select nearest station. You can select manually.');
+        } finally {
+          setAutoSelectingStation(false);
+          setLocationFetched(true);
+        }
+      }
+    };
+    autoSelectNearestStation();
+  }, [selectedStation, locationFetched]);
 
   const loadStations = async () => {
     try {
@@ -87,26 +114,8 @@ const BookTrainingScreen = ({ navigation }) => {
 
   const handleStationSelect = (station) => {
     if (!station) return;
-    
-    // Ensure we're using the correct station_id
-    const selectedStation = stations.find(s => s.station_id === station.station_id);
-    if (!selectedStation) {
-      console.error('Invalid station selected:', {
-        attempted_station: station,
-        available_stations: stations
-      });
-      return;
-    }
-
-    console.log('Selected station details:', {
-      station: selectedStation,
-      station_id: selectedStation.station_id,
-      station_id_type: typeof selectedStation.station_id,
-      station_id_value: selectedStation.station_id,
-      all_stations: stations
-    });
-    
-    setSelectedStation(selectedStation);
+    setSelectedStation(station);
+    setShowStationModal(false);
   };
 
   const handleBooking = async () => {
@@ -155,7 +164,7 @@ const BookTrainingScreen = ({ navigation }) => {
       const bookingData = {
         user_id: userData.user.id,
         station_id: stationId, // Use the validated string version
-        company_name: companyName.trim() || null,
+        company_name: companyName.trim() ? companyName.trim() : 'Individual',
         training_date: selectedDate.toISOString().split('T')[0],
         training_time: selectedTime.toLocaleTimeString('en-US', { 
           hour12: false,
@@ -179,14 +188,14 @@ const BookTrainingScreen = ({ navigation }) => {
         throw error;
       }
 
-      // Show success message and navigate back
+      // Show success message and navigate to bookings
       Alert.alert(
         'Booking Successful',
         'Your training session has been booked successfully. You will receive a confirmation soon.',
         [
           {
             text: 'OK',
-            onPress: () => navigation.goBack()
+            onPress: () => navigation.navigate('UserNotifications', { showBookings: true })
           }
         ]
       );
@@ -197,6 +206,24 @@ const BookTrainingScreen = ({ navigation }) => {
       setLoading(false);
     }
   };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      setCompanyName('');
+      setSelectedDate(new Date());
+      setSelectedTime(new Date());
+      setSelectedStation(null);
+      setParticipants(1);
+      setShowDatePicker(false);
+      setShowTimePicker(false);
+      setLoading(false);
+      setError('');
+      setAutoSelectingStation(false);
+      setLocationFetched(false);
+      setShowStationModal(false);
+      loadStations();
+    }, [])
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -276,48 +303,24 @@ const BookTrainingScreen = ({ navigation }) => {
         <View style={styles.formGroup}>
           <View style={styles.labelContainer}>
             <Ionicons name="location" size={24} color="#666" />
-            <Text style={styles.label}>Select Station</Text>
+            <Text style={styles.label}>Pick Station</Text>
           </View>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={selectedStation?.station_id}
-              onValueChange={(itemValue) => {
-                console.log('Picker value changed:', {
-                  itemValue,
-                  itemValue_type: typeof itemValue,
-                  available_stations: stations.map(s => ({
-                    id: s.station_id,
-                    name: s.station_name,
-                    type: typeof s.station_id
-                  }))
-                });
-                
-                // Find the complete station object
-                const station = stations.find(s => s.station_id === itemValue);
-                if (station) {
-                  handleStationSelect(station);
-                } else {
-                  console.error('Station not found:', {
-                    itemValue,
-                    available_stations: stations.map(s => ({
-                      id: s.station_id,
-                      name: s.station_name
-                    }))
-                  });
-                }
-              }}
-              style={styles.picker}
-            >
-              <Picker.Item label="Select a station" value={null} />
-              {stations.map((station) => (
-                <Picker.Item
-                  key={station.station_id}
-                  label={`${station.station_name} (${station.station_id})`}
-                  value={station.station_id}
-                />
-              ))}
-            </Picker>
+          <View style={styles.selectedStationBox}>
+            <Text style={styles.selectedStationText}>
+              {autoSelectingStation
+                ? 'Detecting nearest station...'
+                : selectedStation
+                  ? `${selectedStation.station_name} (${selectedStation.station_id})`
+                  : 'No station selected'}
+            </Text>
           </View>
+          <TouchableOpacity
+            style={[styles.changeButton, autoSelectingStation && styles.disabledButton]}
+            onPress={() => setShowStationModal(true)}
+            disabled={autoSelectingStation}
+          >
+            <Text style={styles.changeButtonText}>Change Station</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.formGroup}>
@@ -367,6 +370,40 @@ const BookTrainingScreen = ({ navigation }) => {
           {loading ? 'Booking...' : 'Book Training Session'}
         </Button>
       </ScrollView>
+
+      <Modal
+        isVisible={showStationModal}
+        onBackdropPress={() => setShowStationModal(false)}
+        onBackButtonPress={() => setShowStationModal(false)}
+        style={styles.modal}
+      >
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Select a Station</Text>
+          <ScrollView style={{ maxHeight: 300 }}>
+            {stations.map((station) => (
+              <TouchableOpacity
+                key={station.station_id}
+                style={styles.stationItem}
+                onPress={() => handleStationSelect(station)}
+              >
+                <Text style={styles.stationName}>{station.station_name}</Text>
+                <Text style={styles.stationAddress}>{station.station_address}</Text>
+                <Text style={styles.stationRegion}>{station.station_region}</Text>
+                <Text style={styles.stationId}>Station ID: {station.station_id}</Text>
+                {station.distance !== undefined && (
+                  <Text style={styles.stationDistance}>{station.distance.toFixed(2)} km away</Text>
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => setShowStationModal(false)}
+          >
+            <Text style={styles.closeButtonText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -444,6 +481,15 @@ const styles = StyleSheet.create({
     borderColor: '#ddd',
     borderRadius: 8,
     overflow: 'hidden',
+    marginBottom: 20,
+  },
+  changeButton: {
+    marginTop: 10,
+    marginBottom: 16,
+    padding: 10,
+    backgroundColor: '#2196f3',
+    borderRadius: 5,
+    alignItems: 'center',
   },
   picker: {
     height: 50,
@@ -498,7 +544,84 @@ const styles = StyleSheet.create({
     color: '#DC3545',
     marginBottom: 16,
     textAlign: 'center',
-  }
+  },
+  selectedStationBox: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    backgroundColor: '#f5f5f5',
+    minHeight: 48,
+    justifyContent: 'center',
+  },
+  selectedStationText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  modal: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    margin: 0,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 10,
+    width: '80%',
+    maxHeight: '80%',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  stationItem: {
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+  },
+  stationName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  stationAddress: {
+    fontSize: 14,
+    color: '#666',
+  },
+  stationRegion: {
+    fontSize: 14,
+    color: '#666',
+  },
+  stationId: {
+    fontSize: 14,
+    color: '#666',
+  },
+  closeButton: {
+    backgroundColor: '#2196f3',
+    padding: 10,
+    borderRadius: 5,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  closeButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  changeButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  disabledButton: {
+    backgroundColor: '#ddd',
+  },
+  stationDistance: {
+    fontSize: 14,
+    color: '#0891b2',
+  },
 });
 
-export default BookTrainingScreen; 
+export default UserBookingTrainingScreen; 

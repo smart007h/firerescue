@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../config/supabaseClient';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '../context/AuthContext';
 
 export default function FirefighterLoginScreen() {
   const [stationId, setStationId] = useState('');
@@ -25,6 +26,7 @@ export default function FirefighterLoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const navigation = useNavigation();
+  const { setUserRole } = useAuth();
 
   const checkDatabase = async () => {
     try {
@@ -72,7 +74,7 @@ export default function FirefighterLoginScreen() {
         const session = JSON.parse(sessionStr);
         
         // Check if session is still valid
-        if (session.expires_at > new Date().getTime()) {
+        if (session.expires_at * 1000 > Date.now()) {
           // Check if station data exists
           const stationDataStr = await AsyncStorage.getItem('stationData');
           if (stationDataStr) {
@@ -92,12 +94,7 @@ export default function FirefighterLoginScreen() {
               if (!await AsyncStorage.getItem('stationId')) {
                 await AsyncStorage.setItem('stationId', stationData.station_id);
               }
-              navigation.replace('DrawerNavigator', {
-                screen: 'MainStack',
-                params: {
-                  screen: 'FirefighterMain'
-                }
-              });
+              navigation.replace('FirefighterMain');
               return;
             }
           }
@@ -222,13 +219,9 @@ export default function FirefighterLoginScreen() {
       console.log('Login successful!');
       console.log('Station details:', data);
 
-      // Navigate to the Firefighter stack
-      navigation.replace('DrawerNavigator', {
-        screen: 'MainStack',
-        params: {
-          screen: 'FirefighterMain'
-        }
-      });
+      // Set session and userRole, then let AuthContext/AppNavigator handle navigation
+      // Do not navigate here
+      setUserRole('firefighter');
     } catch (error) {
       console.error('Login error:', error);
       setError(error.message || 'Failed to login');

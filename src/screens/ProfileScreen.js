@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, FlatList, ActivityIndicator } from 'react-native';
 import { Text, Avatar, Button, Card, Divider, IconButton } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { signOut } from '../services/auth';
+import { useAuth } from '../context/AuthContext';
 import { supabase } from '../config/supabaseClient';
 
 const ProfileScreen = ({ navigation, route }) => {
@@ -75,14 +75,10 @@ const ProfileScreen = ({ navigation, route }) => {
     }
   };
 
+  const { signOut } = useAuth();
   const handleLogout = async () => {
     try {
-      const { error } = await signOut();
-      if (error) throw error;
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Welcome' }],
-      });
+      await signOut();
     } catch (error) {
       console.error('Logout error:', error);
     }

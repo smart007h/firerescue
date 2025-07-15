@@ -26,10 +26,10 @@ const FirefighterNotificationsScreen = () => {
   }, []);
 
   useEffect(() => {
-    if (stationId) {
-      loadData();
+    if (activeView === 'bookings' && stationId) {
+      loadStationBookings();
     }
-  }, [stationId]);
+  }, [activeView, stationId]);
 
   const checkAuthState = async () => {
     try {
@@ -237,52 +237,23 @@ const FirefighterNotificationsScreen = () => {
 
   const loadStationBookings = async () => {
     try {
-      console.log('=== DEBUG: Loading Bookings ===');
-      console.log('Current station ID:', {
-        value: stationId,
-        type: typeof stationId,
-        length: stationId?.length,
-        matchesPattern: stationId?.match(/^FS[0-9]{3}$/)
-      });
-      
+      console.log('=== DEBUG: loadStationBookings called ===');
+      console.log('Current stationId:', stationId, 'Type:', typeof stationId);
       // First, let's check ALL bookings in the database
       const { data: allBookings, error: allBookingsError } = await supabase
         .from('training_bookings')
         .select('*')
         .order('training_date', { ascending: true });
-      
       console.log('=== ALL BOOKINGS IN DATABASE ===');
       console.log('Total bookings found:', allBookings?.length || 0);
       console.log('All bookings:', JSON.stringify(allBookings, null, 2));
       console.log('Error (if any):', allBookingsError);
-
-      // Get current user for RLS debugging
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      console.log('Current user:', {
-        id: user?.id,
-        error: userError
-      });
-
-      // Get firefighter data for RLS debugging
-      const { data: firefighterData, error: firefighterError } = await supabase
-        .from('firefighters')
-        .select('*')
-        .eq('id', user?.id)
-        .single();
-      
-      console.log('Firefighter data:', {
-        data: firefighterData,
-        error: firefighterError,
-        stationMatch: firefighterData?.station_id === stationId
-      });
-
       // Now try the station-specific query
       const { data, error } = await supabase
         .from('training_bookings')
         .select('*')
         .eq('station_id', stationId)
         .order('training_date', { ascending: true });
-
       console.log('=== STATION SPECIFIC BOOKINGS ===');
       console.log('Query error:', error);
       console.log('Number of bookings found for station:', data?.length || 0);
@@ -378,7 +349,7 @@ const FirefighterNotificationsScreen = () => {
 
       <TouchableOpacity
         style={[styles.mainButton, { backgroundColor: '#4CAF50' }]}
-        onPress={() => setActiveView('bookings')}
+        onPress={() => navigation.navigate('FirefighterTrainingApproval')}
       >
         <Ionicons name="calendar-outline" size={32} color="#FFFFFF" />
         <Text style={styles.mainButtonText}>Bookings</Text>
@@ -469,6 +440,19 @@ const FirefighterNotificationsScreen = () => {
         <Badge style={styles.badge}>
           {bookings.filter(b => b.status === 'pending').length} Pending
         </Badge>
+      </View>
+
+      {/* Add Book Training button for firefighters */}
+      <View style={{ alignItems: 'flex-end', marginBottom: 12 }}>
+        <Button
+          mode="contained"
+          icon="plus"
+          style={{ backgroundColor: '#007AFF', borderRadius: 8 }}
+          labelStyle={{ color: '#fff', fontWeight: 'bold' }}
+          onPress={() => navigation.navigate('BookTraining')}
+        >
+          Book Training
+        </Button>
       </View>
 
       <ScrollView

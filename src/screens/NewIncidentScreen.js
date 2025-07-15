@@ -9,7 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import { TextInput, Button } from 'react-native-paper';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../config/supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
@@ -32,10 +32,20 @@ const NewIncidentScreen = ({ navigation }) => {
     try {
       setLoading(true);
 
-      // Get dispatcher data
-      const dispatcherData = await AsyncStorage.getItem('dispatcherData');
-      const dispatcher = JSON.parse(dispatcherData);
-
+      // Get authenticated user UUID
+      const { data: { user } } = await supabase.auth.getUser();
+      const dispatcherUUID = user?.id;
+      // Check dispatcher record exists
+      const { data: dispatcher, error: dispatcherError } = await supabase
+        .from('dispatchers')
+        .select('*')
+        .eq('id', dispatcherUUID)
+        .single();
+      if (dispatcherError || !dispatcher) {
+        Alert.alert('Error', 'Dispatcher record not found or mismatched.');
+        setLoading(false);
+        return;
+      }
       // Create the incident
       const { data, error } = await supabase
         .from('incidents')
@@ -47,7 +57,7 @@ const NewIncidentScreen = ({ navigation }) => {
             priority: formData.priority,
             status: formData.status,
             station_id: dispatcher.station_id,
-            reported_by: dispatcher.dispatcher_id,
+            reported_by: dispatcherUUID,
             created_at: new Date().toISOString(),
           },
         ])

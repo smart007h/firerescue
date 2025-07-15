@@ -1,21 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, FlatList, TouchableOpacity, Alert, Platform } from 'react-native';
-import { Text, Card, Badge, Title } from 'react-native-paper';
+import { Text, Card, Badge, Title, Menu, Button, TextInput } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../config/supabaseClient';
+import { supabase } from '../lib/supabase';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
+import { getStations } from '../services/trainingBookings';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 const UserReportHistoryScreen = () => {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedDescriptions, setExpandedDescriptions] = useState({});
   const navigation = useNavigation();
+  const [stations, setStations] = useState([]);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [stationFilter, setStationFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [statusMenuVisible, setStatusMenuVisible] = useState(false);
+  const [stationMenuVisible, setStationMenuVisible] = useState(false);
 
   useEffect(() => {
     loadReports();
+    getStations().then(({ data }) => setStations(data || []));
   }, []);
 
   const getAddressFromCoordinates = async (latitude, longitude) => {
@@ -24,17 +34,19 @@ const UserReportHistoryScreen = () => {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
+        // Request permissions before reverse geocoding
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          throw new Error('Location permission denied');
+        }
         const timeoutPromise = new Promise((_, reject) => {
           setTimeout(() => reject(new Error('Timeout')), timeout);
         });
-
         const geocodePromise = Location.reverseGeocodeAsync({
           latitude,
           longitude,
         });
-
         const [address] = await Promise.race([geocodePromise, timeoutPromise]);
-
         if (address) {
           const formattedAddress = [
             address.street,
@@ -232,6 +244,21 @@ const UserReportHistoryScreen = () => {
     </TouchableOpacity>
   );
 
+  // Extract unique statuses from reports
+  const uniqueStatuses = Array.from(new Set(reports.map(r => r.status || 'pending')));
+
+  // Filtering logic
+  const filteredReports = reports.filter(report => {
+    let statusMatch = !statusFilter || report.status === statusFilter;
+    let stationMatch = !stationFilter || report.station_id === stationFilter;
+    let dateMatch = true;
+    if (dateFilter) {
+      const reportDate = new Date(report.created_at);
+      dateMatch = reportDate.toDateString() === new Date(dateFilter).toDateString();
+    }
+    return statusMatch && stationMatch && dateMatch;
+  });
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -255,8 +282,53 @@ const UserReportHistoryScreen = () => {
         </View>
       </View>
 
+      {/* Filter Controls */}
+      <View style={{ flexDirection: 'row', margin: 12, gap: 8, alignItems: 'center' }}>
+        {/* Status Dropdown */}
+        <Menu
+          visible={statusMenuVisible}
+          onDismiss={() => setStatusMenuVisible(false)}
+          anchor={<Button mode="outlined" onPress={() => setStatusMenuVisible(true)}>{statusFilter ? statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1) : 'Status'}</Button>}
+        >
+          <Menu.Item onPress={() => setStatusFilter('')} title="All" />
+          {uniqueStatuses.map(status => (
+            <Menu.Item key={status} onPress={() => { setStatusFilter(status); setStatusMenuVisible(false); }} title={status.charAt(0).toUpperCase() + status.slice(1)} />
+          ))}
+        </Menu>
+        {/* Station Dropdown */}
+        <Menu
+          visible={stationMenuVisible}
+          onDismiss={() => setStationMenuVisible(false)}
+          anchor={<Button mode="outlined" onPress={() => setStationMenuVisible(true)}>{stationFilter ? (stations.find(s => s.station_id === stationFilter)?.station_name || 'Station') : 'Station'}</Button>}
+        >
+          <Menu.Item onPress={() => setStationFilter('')} title="All" />
+          {stations.map(station => (
+            <Menu.Item key={station.station_id} onPress={() => { setStationFilter(station.station_id); setStationMenuVisible(false); }} title={station.station_name} />
+          ))}
+        </Menu>
+        {/* Date Picker */}
+        <Button mode="outlined" onPress={() => setShowDatePicker(true)}>
+          {dateFilter ? new Date(dateFilter).toLocaleDateString() : 'Date'}
+        </Button>
+        {showDatePicker && (
+          <DateTimePicker
+            value={dateFilter ? new Date(dateFilter) : new Date()}
+            mode="date"
+            display="default"
+            onChange={(event, selectedDate) => {
+              setShowDatePicker(false);
+              if (selectedDate) setDateFilter(selectedDate);
+            }}
+          />
+        )}
+        {dateFilter && (
+          <Button mode="text" onPress={() => setDateFilter(null)} style={{ marginLeft: 4 }}>Clear</Button>
+        )}
+      </View>
+
+      {/* Filtered FlatList */}
       <FlatList
-        data={reports}
+        data={filteredReports}
         renderItem={renderReportItem}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.content}

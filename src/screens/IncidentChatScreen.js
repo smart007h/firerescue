@@ -12,8 +12,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../config/supabaseClient';
+import { supabase } from '../lib/supabase';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { useAuth } from '../context/AuthContext';
 
 const IncidentChatScreen = () => {
   const [messages, setMessages] = useState([]);
@@ -24,11 +25,63 @@ const IncidentChatScreen = () => {
   const route = useRoute();
   const { incidentId } = route.params;
   const flatListRef = useRef(null);
+  const [incident, setIncident] = useState(null);
+  const [otherParticipant, setOtherParticipant] = useState(null);
+
+  // Use AuthContext
+  const { user: currentUser, loading: authLoading } = useAuth();
+  const isAuthenticated = !!currentUser;
+
+  // Only allow chat for reporter or assigned dispatcher
+  let notAllowedReason = '';
+  const isIncidentParticipant = !!currentUser && !!incident &&
+    (currentUser.id === incident.reported_by || currentUser.id === incident.dispatcher_id);
+  if (!isAuthenticated) {
+    notAllowedReason = 'You are not logged in.';
+  } else if (!!currentUser && !!incident) {
+    if (currentUser.id !== incident.reported_by && currentUser.id !== incident.dispatcher_id) {
+      notAllowedReason = 'You are not allowed to participate in this chat because you are neither the reporter nor the assigned dispatcher for this incident.';
+    } else if (!incident.dispatcher_id) {
+      notAllowedReason = 'No dispatcher has been assigned to this incident yet.';
+    }
+  }
 
   useEffect(() => {
-    loadMessages();
-    subscribeToMessages();
-  }, [incidentId]);
+    if (!authLoading && incidentId) {
+    loadIncident();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incidentId, authLoading, currentUser]);
+
+  useEffect(() => {
+    if (!authLoading && isAuthenticated && incident && isIncidentParticipant) {
+      loadMessages();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, isAuthenticated, incident, isIncidentParticipant]);
+
+  // Debug: log user and incident info for troubleshooting chat access
+  useEffect(() => {
+    if (__DEV__) {
+      console.log('IncidentChatScreen debug:', {
+        currentUser,
+        incident,
+        isIncidentParticipant,
+        isAuthenticated,
+        notAllowedReason,
+      });
+    }
+  }, [currentUser, incident, isIncidentParticipant, isAuthenticated, notAllowedReason]);
+
+  // Debug: log route params, session, and user info on mount
+  useEffect(() => {
+    if (__DEV__) {
+      console.log('IncidentChatScreen route.params:', route.params);
+      supabase.auth.getSession().then((sessionRes) => {
+        console.log('Supabase getSession:', sessionRes);
+      });
+    }
+  }, []);
 
   const loadMessages = async () => {
     try {
@@ -39,8 +92,8 @@ const IncidentChatScreen = () => {
           *,
           sender:sender_id (
             email,
-            raw_user_meta_data->>'full_name' as full_name,
-            raw_user_meta_data->>'role' as role
+            full_name,
+            role
           )
         `)
         .eq('incident_id', incidentId)
@@ -56,84 +109,85 @@ const IncidentChatScreen = () => {
     }
   };
 
-  const subscribeToMessages = () => {
-    const subscription = supabase
-      .channel(`chat_messages:${incidentId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `incident_id=eq.${incidentId}`,
-        },
-        async (payload) => {
-          // Fetch the complete message with sender information
-          const { data: newMessage, error } = await supabase
-            .from('chat_messages')
-            .select(`
-              *,
-              sender:sender_id (
-                email,
-                raw_user_meta_data->>'full_name' as full_name,
-                raw_user_meta_data->>'role' as role
-              )
-            `)
-            .eq('id', payload.new.id)
-            .single();
-
-          if (!error && newMessage) {
-            setMessages((prev) => [...prev, newMessage]);
-            if (flatListRef.current) {
-              flatListRef.current.scrollToEnd({ animated: true });
-            }
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  };
-
   const sendMessage = async () => {
     if (!newMessage.trim()) return;
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('No authenticated user found');
+      if (!currentUser) {
+        alert('Not logged in. Please log in to send messages.');
+        return;
+      }
 
       const { error } = await supabase
         .from('chat_messages')
         .insert({
           incident_id: incidentId,
-          sender_id: user.id,
+          sender_id: currentUser.id,
           message: newMessage.trim(),
           created_at: new Date().toISOString(),
         });
 
       if (error) throw error;
       setNewMessage('');
+      await loadMessages();
     } catch (err) {
       console.error('Error sending message:', err);
       setError('Failed to send message');
     }
   };
 
-  const renderMessage = ({ item }) => {
-    const isCurrentUser = item.sender_id === supabase.auth.user()?.id;
+  const loadIncident = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('incidents')
+        .select('id, reported_by, dispatcher_id')
+        .eq('id', incidentId)
+        .single();
+      if (!error && data) {
+        setIncident(data);
+        // Debug log: print the loaded incident and current user
+        console.log('DEBUG: Incident loaded:', data);
+        console.log('DEBUG: Current user:', currentUser);
+        // Determine the other participant
+        if (currentUser && data.reported_by && data.dispatcher_id) {
+          // You may want to fetch reporter/dispatcher profiles separately if needed
+        }
+      } else {
+        console.log('DEBUG: Incident fetch error:', error);
+      }
+    } catch (err) {
+      console.error('Error loading incident for chat:', err);
+    }
+  };
 
+  // Determine chat partner role for header
+  let chatHeader = 'Chat';
+  if (otherParticipant) {
+    if (otherParticipant.full_name) {
+      chatHeader = `Chat with ${otherParticipant.full_name}`;
+    } else if (otherParticipant.email) {
+      chatHeader = `Chat with ${otherParticipant.email}`;
+    }
+  }
+
+  const renderMessage = ({ item }) => {
+    const isCurrentUser = item.sender_id === currentUser?.id;
+    const roleLabel = isCurrentUser ? 'You' : (item.sender?.role === 'dispatcher' ? 'Dispatcher' : item.sender?.role === 'user' ? 'User' : '');
     return (
       <View style={[
         styles.messageContainer,
         isCurrentUser ? styles.sentMessage : styles.receivedMessage
       ]}>
-        {!isCurrentUser && (
-          <Text style={styles.senderName}>
-            {item.sender?.full_name || item.sender?.email || 'Unknown User'}
-          </Text>
-        )}
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+          {!isCurrentUser && (
+            <Text style={styles.senderName}>
+              {item.sender?.full_name || item.sender?.email || 'Unknown User'}
+            </Text>
+          )}
+          <View style={[styles.roleBadge, isCurrentUser ? styles.roleBadgeYou : item.sender?.role === 'dispatcher' ? styles.roleBadgeDispatcher : styles.roleBadgeUser]}>
+            <Text style={styles.roleBadgeText}>{roleLabel}</Text>
+          </View>
+        </View>
         <View style={[
           styles.messageBubble,
           isCurrentUser ? styles.sentBubble : styles.receivedBubble
@@ -152,7 +206,7 @@ const IncidentChatScreen = () => {
     );
   };
 
-  if (loading) {
+  if (authLoading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
@@ -162,11 +216,30 @@ const IncidentChatScreen = () => {
           >
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Chat</Text>
+          <Text style={styles.headerTitle}>{chatHeader}</Text>
         </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#DC3545" />
-          <Text style={styles.loadingText}>Loading messages...</Text>
+          <Text style={styles.loadingText}>Loading authentication...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{chatHeader}</Text>
+        </View>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>{error}</Text>
         </View>
       </SafeAreaView>
     );
@@ -181,8 +254,23 @@ const IncidentChatScreen = () => {
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Chat</Text>
+        <Text style={styles.headerTitle}>{chatHeader}</Text>
       </View>
+
+      {/* User Info Section */}
+      {otherParticipant && (
+        <View style={{ padding: 12, backgroundColor: '#f8f9fa', borderBottomWidth: 1, borderBottomColor: '#eee' }}>
+          <Text style={{ fontWeight: 'bold', fontSize: 16 }}>
+            {otherParticipant.full_name || otherParticipant.email}
+          </Text>
+          {otherParticipant.email && (
+            <Text style={{ color: '#666', fontSize: 14 }}>{otherParticipant.email}</Text>
+          )}
+          {otherParticipant.phone && (
+            <Text style={{ color: '#666', fontSize: 14 }}>{otherParticipant.phone}</Text>
+          )}
+        </View>
+      )}
 
       <FlatList
         ref={flatListRef}
@@ -205,22 +293,43 @@ const IncidentChatScreen = () => {
           placeholder="Type a message..."
           placeholderTextColor="#666"
           multiline
+          editable={isAuthenticated && isIncidentParticipant}
         />
         <TouchableOpacity
           style={[
             styles.sendButton,
-            !newMessage.trim() && styles.sendButtonDisabled
+            (!newMessage.trim() || !isAuthenticated || !isIncidentParticipant) && styles.sendButtonDisabled
           ]}
           onPress={sendMessage}
-          disabled={!newMessage.trim()}
+          disabled={!newMessage.trim() || !isAuthenticated || !isIncidentParticipant}
         >
           <Ionicons
             name="send"
             size={24}
-            color={newMessage.trim() ? '#DC3545' : '#666'}
+            color={newMessage.trim() && isAuthenticated && isIncidentParticipant ? '#DC3545' : '#666'}
           />
         </TouchableOpacity>
       </KeyboardAvoidingView>
+
+      {!isIncidentParticipant && (
+        <View style={{ padding: 16, alignItems: 'center' }}>
+          <Text style={{ color: '#DC3545', fontWeight: 'bold', textAlign: 'center' }}>
+            {notAllowedReason || 'You are not allowed to participate in this chat.'}
+          </Text>
+          <Text style={{ color: '#666', fontSize: 12, marginTop: 8 }}>
+            If you believe this is an error, please check that you are logged in as the correct user or dispatcher, and that the dispatcher is assigned to this incident.
+          </Text>
+          {__DEV__ && (
+            <View style={{ marginTop: 12, backgroundColor: '#f8f9fa', padding: 8, borderRadius: 8 }}>
+              <Text style={{ fontSize: 12, color: '#333' }}>Debug Info:</Text>
+              <Text style={{ fontSize: 12, color: '#333' }}>Route Params: {JSON.stringify(route.params)}</Text>
+              <Text style={{ fontSize: 12, color: '#333' }}>Current User: {currentUser?.id}</Text>
+              <Text style={{ fontSize: 12, color: '#333' }}>Incident Reporter: {incident?.reported_by}</Text>
+              <Text style={{ fontSize: 12, color: '#333' }}>Incident Dispatcher: {incident?.dispatcher_id}</Text>
+            </View>
+          )}
+        </View>
+      )}
     </SafeAreaView>
   );
 };
@@ -328,6 +437,27 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     color: '#666',
+  },
+  roleBadge: {
+    backgroundColor: '#eee',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginLeft: 6,
+  },
+  roleBadgeText: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  roleBadgeDispatcher: {
+    backgroundColor: '#2563eb',
+  },
+  roleBadgeUser: {
+    backgroundColor: '#DC3545',
+  },
+  roleBadgeYou: {
+    backgroundColor: '#aaa',
   },
 });
 

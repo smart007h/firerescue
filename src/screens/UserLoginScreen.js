@@ -3,6 +3,9 @@ import { View, StyleSheet, Image, Platform } from 'react-native';
 import { Text, TextInput, Button, HelperText } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { signInUser } from '../services/auth';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '../context/AuthContext';
 
 const UserLoginScreen = ({ navigation, route }) => {
   const [formData, setFormData] = useState({
@@ -12,6 +15,8 @@ const UserLoginScreen = ({ navigation, route }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const { setUserRole } = useAuth();
 
   useEffect(() => {
     if (route.params?.message) {
@@ -37,16 +42,12 @@ const UserLoginScreen = ({ navigation, route }) => {
         throw new Error('Invalid account type. Please use civilian login.');
       }
 
-      // Navigate to appropriate screen based on role
-      navigation.replace('DrawerNavigator', {
-        screen: 'MainStack',
-        params: {
-          screen: 'UserMain',
-          params: {
-            screen: 'Home'
-          }
-        }
-      });
+      // Set userRole in AsyncStorage
+      await AsyncStorage.setItem('userRole', 'user');
+      // Immediately update context for navigation
+      if (setUserRole) setUserRole('user');
+
+      // Do not navigate; let AuthContext/AppNavigator handle stack switch
     } catch (err) {
       setError(err.message || 'Failed to sign in');
     } finally {
@@ -94,9 +95,12 @@ const UserLoginScreen = ({ navigation, route }) => {
             label="Password"
             value={formData.password}
             onChangeText={(text) => setFormData({ ...formData, password: text })}
-            secureTextEntry
+            secureTextEntry={!showPassword}
             style={styles.input}
             mode="outlined"
+            right={<TextInput.Icon icon={() => (
+              <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={22} color="#666" onPress={() => setShowPassword(!showPassword)} />
+            )} />}
           />
 
           <Button

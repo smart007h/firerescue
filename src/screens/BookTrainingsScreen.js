@@ -14,8 +14,9 @@ import { supabase } from '../config/supabaseClient';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RefreshContext } from '../../App';
+import UserBookingTrainingScreen from './UserBookingTrainingScreen';
 
-const BookTrainingsScreen = ({ navigation }) => {
+const UserBookedTrainingScreen = ({ navigation }) => {
   const { refreshApp } = useContext(RefreshContext);
   const [stations, setStations] = useState([]);
   const [selectedStation, setSelectedStation] = useState(null);
@@ -469,4 +470,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default BookTrainingsScreen; 
+export default UserBookedTrainingScreen; 

@@ -46,14 +46,9 @@ const WelcomeScreen = ({ navigation }) => {
         const userData = JSON.parse(userDataStr);
         
         // If session exists and not expired
-        if (session && new Date(session.expires_at) > new Date()) {
+        if (session && session.expires_at * 1000 > Date.now()) {
           // Navigate directly to the appropriate home screen
-          navigation.replace('DrawerNavigator', {
-            screen: 'MainStack',
-            params: {
-              screen: userData.profile?.role === 'firefighter' ? 'FirefighterMain' : 'UserMain'
-            }
-          });
+          navigation.replace('UserMain', { screen: 'Home' });
           return;
         }
       }
@@ -73,11 +68,11 @@ const WelcomeScreen = ({ navigation }) => {
   }, []);
 
   const handleGetStarted = () => {
-    navigation.navigate('UserSelection');
+    navigation.navigate('UserSelectionScreen');
   };
 
   const handleSkip = () => {
-    navigation.navigate('UserSelection');
+    navigation.navigate('UserSelectionScreen');
   };
 
   const handleNext = () => {

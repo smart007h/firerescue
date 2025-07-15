@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../config/supabaseClient';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '../context/AuthContext';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 export default function FirefighterProfileScreen() {
@@ -29,6 +30,7 @@ export default function FirefighterProfileScreen() {
   });
   const [recentIncidents, setRecentIncidents] = useState([]);
   const navigation = useNavigation();
+  const { signOut } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -135,17 +137,7 @@ export default function FirefighterProfileScreen() {
 
   const handleLogout = async () => {
     try {
-      // Clear AsyncStorage
-      await AsyncStorage.removeItem('supabase-session');
-      await AsyncStorage.removeItem('stationData');
-      await AsyncStorage.removeItem('stationId');
-      await AsyncStorage.removeItem('userRole');
-      
-      // Navigate to login selection
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'LoginSelection' }],
-      });
+      await signOut();
     } catch (error) {
       console.error('Error logging out:', error);
       Alert.alert('Error', 'Failed to log out');

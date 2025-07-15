@@ -3,15 +3,17 @@ import { View, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Modal }
 import { Text, Card, Badge, ActivityIndicator, Button } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
-import { supabase } from '../config/supabaseClient';
+import { supabase } from '../lib/supabase';
 import { getUserBookings, cancelBooking } from '../services/trainingBookings';
 import { getCurrentUser } from '../services/auth';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 const UserNotificationsScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute();
   const [activeView, setActiveView] = useState(null); // 'callLogs' or 'bookings'
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -20,27 +22,29 @@ const UserNotificationsScreen = () => {
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [showBookingDetails, setShowBookingDetails] = useState(false);
   const [callLogs, setCallLogs] = useState([]);
+  const [bookingFilter, setBookingFilter] = useState('all'); // 'all', 'pending', 'confirmed', 'cancelled', 'completed', or station name
+  const [dateFilter, setDateFilter] = useState(null); // Date object or null
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [stationModalVisible, setStationModalVisible] = useState(false);
+  const [stationList, setStationList] = useState([]);
 
   useEffect(() => {
     loadUserId();
   }, []);
 
   useEffect(() => {
-    if (userId) {
-      const loadData = async () => {
-        try {
-          setLoading(true);
-          await Promise.all([loadBookings(), loadCallLogs()]);
-        } catch (error) {
-          console.error('Error loading data:', error);
-        } finally {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      };
-      loadData();
+    if (route?.params?.showBookings) {
+      setActiveView('bookings');
     }
-  }, [userId]);
+  }, [route?.params]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (activeView === 'bookings' && userId) {
+        loadBookings();
+      }
+    }, [activeView, userId])
+  );
 
   const loadUserId = async () => {
     try {
@@ -59,35 +63,46 @@ const UserNotificationsScreen = () => {
       console.error('Error loading user ID:', error);
       setLoading(false);
       navigation.replace('Login');
+      return;
     }
+    setLoading(false);
+  };
+
+  const sortBookings = (bookings) => {
+    // Current bookings: status is 'pending' or 'confirmed' and date is today or in the future
+    const now = new Date();
+    const current = bookings.filter(b =>
+      (b.status === 'pending' || b.status === 'confirmed') &&
+      new Date(b.training_date) >= now
+    );
+    const past = bookings.filter(b =>
+      !((b.status === 'pending' || b.status === 'confirmed') && new Date(b.training_date) >= now)
+    );
+    // Sort current by soonest date, past by most recent first
+    current.sort((a, b) => new Date(a.training_date) - new Date(b.training_date));
+    past.sort((a, b) => new Date(b.training_date) - new Date(a.training_date));
+    return [...current, ...past];
   };
 
   const loadBookings = async () => {
     try {
       setLoading(true);
       console.log('Loading bookings for user ID:', userId);
-      
       const { data, error } = await getUserBookings(userId);
-      
       if (error) {
         console.error('Error fetching bookings:', error);
         throw error;
       }
-      
       console.log('Fetched bookings:', data);
-      
-      // Sort bookings by date and status (pending first)
-      const sortedBookings = data.sort((a, b) => {
-        if (a.status === 'pending' && b.status !== 'pending') return -1;
-        if (a.status !== 'pending' && b.status === 'pending') return 1;
-        return new Date(a.training_date) - new Date(b.training_date);
-      });
-
+      const sortedBookings = sortBookings(data);
       console.log('Sorted bookings:', sortedBookings);
       setBookings(sortedBookings);
+      setStationList(Array.from(new Set(sortedBookings.map(b => b.firefighters?.station_name).filter(Boolean))));
     } catch (error) {
       console.error('Error loading bookings:', error);
       Alert.alert('Error', 'Failed to load training bookings');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -107,9 +122,10 @@ const UserNotificationsScreen = () => {
     }
   };
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setRefreshing(true);
-    loadBookings();
+    await loadBookings();
+    setRefreshing(false);
   };
 
   const handleCancelBooking = async (bookingId) => {
@@ -135,6 +151,18 @@ const UserNotificationsScreen = () => {
   const handleBookTraining = () => {
     setShowBookingDetails(false);
     navigation.navigate('BookTraining');
+  };
+
+  const handleShowBookings = () => {
+    setLoading(true);
+    setActiveView('bookings');
+    loadBookings();
+  };
+
+  const handleShowCallLogs = () => {
+    setLoading(true);
+    setActiveView('callLogs');
+    loadCallLogs();
   };
 
   const getStatusColor = (status) => {
@@ -190,6 +218,130 @@ const UserNotificationsScreen = () => {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  const renderBookingFilters = () => (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12, paddingHorizontal: 4 }}>
+      {[
+        { label: 'All', value: 'all' },
+        { label: 'Pending', value: 'pending' },
+        { label: 'Approved', value: 'confirmed' },
+        { label: 'Rejected', value: 'cancelled' },
+        { label: 'Completed', value: 'completed' },
+      ].map(filter => (
+        <Button
+          key={filter.value}
+          mode={bookingFilter === filter.value ? 'contained' : 'outlined'}
+          onPress={() => setBookingFilter(filter.value)}
+          style={{ marginRight: 8 }}
+        >
+          {filter.label}
+        </Button>
+      ))}
+      {/* Station filter dialog trigger */}
+      <Button
+        mode={bookingFilter && !['all','pending','confirmed','cancelled','completed'].includes(bookingFilter) ? 'contained' : 'outlined'}
+        onPress={() => setStationModalVisible(true)}
+        style={{ marginRight: 8 }}
+        icon="business"
+      >
+        {bookingFilter && !['all','pending','confirmed','cancelled','completed'].includes(bookingFilter)
+          ? bookingFilter
+          : 'Filter by Station'}
+      </Button>
+      {bookingFilter && !['all','pending','confirmed','cancelled','completed'].includes(bookingFilter) && (
+        <Button
+          mode="text"
+          onPress={() => setBookingFilter('all')}
+          style={{ marginRight: 8 }}
+        >
+          Clear Station
+        </Button>
+      )}
+      {/* Date filter button */}
+      <Button
+        mode={dateFilter ? 'contained' : 'outlined'}
+        onPress={() => setShowDatePicker(true)}
+        style={{ marginRight: 8 }}
+        icon="calendar"
+      >
+        {dateFilter ? new Date(dateFilter).toLocaleDateString('en-GB') : 'Filter by Date'}
+      </Button>
+      {dateFilter && (
+        <Button
+          mode="text"
+          onPress={() => setDateFilter(null)}
+          style={{ marginRight: 8 }}
+        >
+          Clear Date
+        </Button>
+      )}
+      {showDatePicker && (
+        <DateTimePicker
+          value={dateFilter ? new Date(dateFilter) : new Date()}
+          mode="date"
+          display="default"
+          onChange={(event, selectedDate) => {
+            setShowDatePicker(false);
+            if (event.type === 'set' && selectedDate) {
+              setDateFilter(selectedDate);
+            }
+          }}
+        />
+      )}
+      {/* Station selection modal */}
+      <Modal
+        visible={stationModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setStationModalVisible(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)' }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: 12, padding: 24, width: '80%' }}>
+            <Text style={{ fontWeight: 'bold', fontSize: 18, marginBottom: 16 }}>Select Station</Text>
+            <ScrollView style={{ maxHeight: 300 }}>
+              {stationList.map(station => (
+                <TouchableOpacity
+                  key={station}
+                  onPress={() => {
+                    setBookingFilter(station);
+                    setStationModalVisible(false);
+                  }}
+                  style={{ paddingVertical: 12 }}
+                >
+                  <Text style={{ fontSize: 16 }}>{station}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <Button onPress={() => setStationModalVisible(false)} style={{ marginTop: 16 }}>Cancel</Button>
+          </View>
+        </View>
+      </Modal>
+    </ScrollView>
+  );
+
+  const getFilteredBookings = () => {
+    let filtered = bookings;
+    if (bookingFilter !== 'all') {
+      if (['pending', 'confirmed', 'cancelled', 'completed'].includes(bookingFilter)) {
+        filtered = filtered.filter(b => b.status === bookingFilter);
+      } else {
+        // If bookingFilter matches a station name
+        filtered = filtered.filter(b => b.firefighters?.station_name === bookingFilter);
+      }
+    }
+    if (dateFilter) {
+      const selectedDate = new Date(dateFilter);
+      filtered = filtered.filter(b => {
+        const bookingDate = new Date(b.training_date);
+        return (
+          bookingDate.getFullYear() === selectedDate.getFullYear() &&
+          bookingDate.getMonth() === selectedDate.getMonth() &&
+          bookingDate.getDate() === selectedDate.getDate()
+        );
+      });
+    }
+    return filtered;
   };
 
   const renderBookingDetails = () => (
@@ -284,6 +436,17 @@ const UserNotificationsScreen = () => {
                     {getStatusMessage(selectedBooking.status)}
                   </Text>
                 </View>
+
+                {['confirmed', 'cancelled'].includes(selectedBooking.status) && selectedBooking.updated_at && (
+                  <View style={styles.detailRow}>
+                    <Ionicons name="time-outline" size={20} color="#4A5568" />
+                    <Text style={styles.detailLabel}>Last Updated:</Text>
+                    <Text style={styles.detailValue}>{formatDate(selectedBooking.updated_at)}</Text>
+                    {selectedBooking.updated_by_station_name && (
+                      <Text style={styles.detailValue}>by {selectedBooking.updated_by_station_name}</Text>
+                    )}
+                  </View>
+                )}
               </View>
 
               <View style={styles.modalActions}>
@@ -316,15 +479,20 @@ const UserNotificationsScreen = () => {
   );
 
   const renderBookings = () => (
-    <View style={styles.section}>
+    <ScrollView
+      style={styles.section}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+      }
+    >
+      {renderBookingFilters()}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Training Sessions</Text>
         <Badge style={styles.badge}>
           {bookings.filter(b => b.status === 'pending').length} Pending
         </Badge>
       </View>
-
-      {bookings.length === 0 ? (
+      {getFilteredBookings().length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="calendar-outline" size={48} color="#757575" />
           <Text style={styles.emptyText}>No training bookings found</Text>
@@ -337,7 +505,7 @@ const UserNotificationsScreen = () => {
           </Button>
         </View>
       ) : (
-        bookings.map((booking) => (
+        getFilteredBookings().map((booking) => (
           <TouchableOpacity
             key={booking.id}
             onPress={() => handleBookingPress(booking)}
@@ -368,20 +536,26 @@ const UserNotificationsScreen = () => {
                       {booking.status.toUpperCase()}
                     </Text>
                   </View>
+                  {['confirmed', 'cancelled'].includes(booking.status) && booking.updated_at && (
+                    <Text style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+                      Updated: {formatDate(booking.updated_at)}
+                      {booking.updated_by_station_name ? ` by ${booking.updated_by_station_name}` : ''}
+                    </Text>
+                  )}
                 </View>
               </Card.Content>
             </Card>
           </TouchableOpacity>
         ))
       )}
-    </View>
+    </ScrollView>
   );
 
   const renderMainButtons = () => (
     <View style={styles.mainButtonsContainer}>
       <TouchableOpacity
         style={[styles.mainButton, { backgroundColor: '#2196F3' }]}
-        onPress={() => setActiveView('callLogs')}
+        onPress={handleShowCallLogs}
       >
         <Ionicons name="call-outline" size={32} color="#FFFFFF" />
         <Text style={styles.mainButtonText}>Call Logs</Text>
@@ -390,7 +564,7 @@ const UserNotificationsScreen = () => {
 
       <TouchableOpacity
         style={[styles.mainButton, { backgroundColor: '#4CAF50' }]}
-        onPress={() => setActiveView('bookings')}
+        onPress={handleShowBookings}
       >
         <Ionicons name="calendar-outline" size={32} color="#FFFFFF" />
         <Text style={styles.mainButtonText}>My Bookings</Text>
