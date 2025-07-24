@@ -1,13 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Modal } from 'react-native';
-import { Text, Card, Badge, ActivityIndicator, Button } from 'react-native-paper';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
-import { Alert } from 'react-native';
-import { supabase } from '../config/supabaseClient';
-import { getCurrentUser } from '../services/auth';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+const React = require('react');
+const { useState, useEffect } = React;
+const { View, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Modal, Alert } = require('react-native');
+const { Text, Card, Badge, ActivityIndicator, Button } = require('react-native-paper');
+const { SafeAreaView } = require('react-native-safe-area-context');
+const { Ionicons } = require('@expo/vector-icons');
+const { useNavigation } = require('@react-navigation/native');
+const { supabase } = require('../config/supabaseClient');
+const { getCurrentUser } = require('../services/auth');
+const AsyncStorage = require('@react-native-async-storage/async-storage');
 
 const FirefighterNotificationsScreen = () => {
   const navigation = useNavigation();
@@ -933,4 +933,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default FirefighterNotificationsScreen; 
+module.exports = FirefighterNotificationsScreen;

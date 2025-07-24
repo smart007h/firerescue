@@ -1,25 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-  ActivityIndicator,
-  Alert,
-  Platform,
-  RefreshControl,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../config/supabaseClient';
-import { useNavigation } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useAuth } from '../context/AuthContext';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+const React = require('react');
+const { useState, useEffect } = React;
+const { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert, Platform, RefreshControl } = require('react-native');
+const { SafeAreaView } = require('react-native-safe-area-context');
+const { Ionicons } = require('@expo/vector-icons');
+const { supabase } = require('../config/supabaseClient');
+const { useNavigation } = require('@react-navigation/native');
+const AsyncStorage = require('@react-native-async-storage/async-storage');
+const { useAuth } = require('../context/AuthContext');
 
-export default function FirefighterProfileScreen() {
+function FirefighterProfileScreen() {
   const [station, setStation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -332,7 +321,7 @@ export default function FirefighterProfileScreen() {
                 </View>
               </View>
               <View style={styles.incidentDetails}>
-                <Icon name="map-marker" size={16} color="#666" />
+                <Ionicons name="location" size={16} color="#666" />
                 <Text style={styles.incidentLocation}>{incident.location}</Text>
               </View>
               <Text style={styles.incidentDate}>
@@ -586,4 +575,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666666',
   },
-}); 
+});
+
+module.exports = FirefighterProfileScreen;

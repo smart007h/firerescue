@@ -1,32 +1,25 @@
-// Learn more https://docs.expo.io/guides/customizing-metro
-const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
+const { getDefaultConfig } = require('expo/metro-config');
+const path = require('path');
 
-const config = {
-  resolver: {
-    sourceExts: ['js', 'jsx', 'json', 'ts', 'tsx'],
-    assetExts: [
-      'png',
-      'jpg',
-      'jpeg',
-      'gif',
-      'mp3',
-      'mp4',
-      'wav',
-      'ttf',
-      'otf',
-      'woff',
-      'woff2',
-      'eot'
-    ],
-  },
-  transformer: {
-    getTransformOptions: async () => ({
-      transform: {
-        experimentalImportSupport: false,
-        inlineRequires: true,
-      },
-    }),
-  },
+const config = getDefaultConfig(__dirname);
+
+// Add asset extensions
+config.resolver.assetExts.push(
+  'jpeg',
+  'jpg',
+  'png',
+  'gif',
+  'webp',
+  'svg'
+);
+
+// Add platforms
+config.resolver.platforms = ['ios', 'android', 'native', 'web'];
+
+// Ensure proper asset resolution
+config.resolver.alias = {
+  '@assets': path.resolve(__dirname, 'src/assets'),
+  '@images': path.resolve(__dirname, 'src/assets/images'),
 };
 
-module.exports = mergeConfig(getDefaultConfig(__dirname), config);
+module.exports = config;

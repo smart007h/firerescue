@@ -1,10 +1,10 @@
-import React from 'react';
-import { View, Text } from 'react-native';
+const React = require('react');
+const { View, Text } = require('react-native');
 
 const DispatchNewIncidentScreen = () => (
   <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
     <Text>Dispatch New Incident Screen</Text>
-    </View>
-  );
+  </View>
+);
 
-export default DispatchNewIncidentScreen; 
+module.exports = DispatchNewIncidentScreen;

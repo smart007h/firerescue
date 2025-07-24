@@ -6,7 +6,6 @@ import { Provider as PaperProvider, DefaultTheme } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import * as Font from 'expo-font';
-import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StyleSheet } from 'react-native';
@@ -39,10 +38,7 @@ export default function App() {
     async function loadFontsAndNavState() {
       try {
         await Font.loadAsync({
-          'Inter-Regular': Inter_400Regular,
-          'Inter-Medium': Inter_500Medium,
-          'Inter-SemiBold': Inter_600SemiBold,
-          'Inter-Bold': Inter_700Bold,
+          // Removed Inter fonts loading
         });
         // Restore navigation state
         const savedStateString = await AsyncStorage.getItem(PERSISTENCE_KEY);
@@ -77,44 +73,7 @@ export default function App() {
       primary: '#DC3545', // Your app's primary color
       accent: '#2D3748',
     },
-    fonts: {
-      regular: {
-        fontFamily: 'Inter-Regular',
-      },
-      medium: {
-        fontFamily: 'Inter-Medium',
-      },
-      bold: {
-        fontFamily: 'Inter-Bold',
-      },
-      labelLarge: {
-        fontFamily: 'Inter-Medium',
-      },
-      labelMedium: {
-        fontFamily: 'Inter-Medium',
-      },
-      labelSmall: {
-        fontFamily: 'Inter-Regular',
-      },
-      titleLarge: {
-        fontFamily: 'Inter-Bold',
-      },
-      titleMedium: {
-        fontFamily: 'Inter-SemiBold',
-      },
-      titleSmall: {
-        fontFamily: 'Inter-Medium',
-      },
-      bodyLarge: {
-        fontFamily: 'Inter-Regular',
-      },
-      bodyMedium: {
-        fontFamily: 'Inter-Regular',
-      },
-      bodySmall: {
-        fontFamily: 'Inter-Regular',
-      },
-    },
+    // Removed font customization
   };
 
   if (!isReady) {

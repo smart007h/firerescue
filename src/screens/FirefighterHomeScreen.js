@@ -13,7 +13,7 @@ import { getAddressFromCoordinates } from '../services/locationService';
 
 const SUPABASE_FUNCTION_URL = 'https://agpxjkmubrrtkxfhjmjm.supabase.co/functions/v1/assign-incident';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFncHhqa211YnJydGt4ZmhqbWptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIzMDQxMjMsImV4cCI6MjA1Nzg4MDEyM30.Lo5yTS9q05WZqifn9Y-z-dau3oCs24S1qgCuHtVFMqM';
-const GOOGLE_API_KEY = "AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E";
+const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
 const FirefighterHomeScreen = ({ navigation }) => {
   const [stationInfo, setStationInfo] = useState(null);
@@ -1038,7 +1038,7 @@ const FirefighterHomeScreen = ({ navigation }) => {
   };
 
   const getAddressFromGoogle = async (latitude, longitude) => {
-    const apiKey = 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E';
+    const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
     const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`;
     try {
       const response = await fetch(url);

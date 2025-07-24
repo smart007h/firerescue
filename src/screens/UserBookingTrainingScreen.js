@@ -16,7 +16,6 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
 import { createTrainingBooking, getStations } from '../services/trainingBookings';
 import { getCurrentUser } from '../services/auth';
-import { supabase } from '../services/supabase';
 import { getCurrentLocation, calculateDistance, findNearestStation } from '../services/locationService';
 import Modal from 'react-native-modal';
 import { useFocusEffect } from '@react-navigation/native';
@@ -624,4 +623,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default UserBookingTrainingScreen; 
+export default UserBookingTrainingScreen;

@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import { supabase } from '../config/supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const IncidentDetailsScreen = ({ route, navigation }) => {
   const { incident } = route.params;
@@ -270,7 +269,6 @@ const IncidentDetailsScreen = ({ route, navigation }) => {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Icon name="arrow-left" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.title}>Incident Details</Text>
       </View>
@@ -299,19 +297,16 @@ const IncidentDetailsScreen = ({ route, navigation }) => {
           </View>
 
           <View style={styles.detailRow}>
-            <Icon name="map-marker" size={20} color="#007AFF" />
             <Text style={styles.detailText}>{locationAddress || 'Loading address...'}</Text>
           </View>
 
           <View style={styles.detailRow}>
-            <Icon name="clock-outline" size={20} color="#007AFF" />
             <Text style={styles.detailText}>
               {new Date(incidentDetails.created_at).toLocaleString()}
             </Text>
           </View>
 
           <View style={styles.detailRow}>
-            <Icon name="flag" size={20} color="#007AFF" />
             <View
               style={[
                 styles.priorityBadge,
@@ -328,20 +323,17 @@ const IncidentDetailsScreen = ({ route, navigation }) => {
           {incidentDetails.station_id ? (
             <View style={styles.stationContainer}>
               <View style={styles.stationHeader}>
-                <Icon name="fire-truck" size={24} color="#DC3545" />
                 <Text style={styles.stationName}>
                   {incidentDetails.assigned_station?.station_name || 'Loading station...'}
                 </Text>
               </View>
               <View style={styles.stationDetails}>
                 <View style={styles.detailRow}>
-                  <Icon name="map-marker" size={20} color="#666" />
                   <Text style={styles.detailText}>
                     {incidentDetails.assigned_station?.station_address || 'Address not available'}
                   </Text>
                 </View>
                 <View style={styles.detailRow}>
-                  <Icon name="phone" size={20} color="#666" />
                   <Text style={styles.detailText}>
                     {incidentDetails.assigned_station?.station_contact || 'Contact not available'}
                   </Text>
@@ -415,7 +407,6 @@ const IncidentDetailsScreen = ({ route, navigation }) => {
               style={styles.trackingButton}
               onPress={handleTrackingPress}
             >
-              <Icon name="map-marker-radius" size={24} color="#FFFFFF" />
               <Text style={styles.trackingButtonText}>Track Incident</Text>
             </TouchableOpacity>
           )}
@@ -593,4 +584,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default IncidentDetailsScreen; 
+export default IncidentDetailsScreen;
