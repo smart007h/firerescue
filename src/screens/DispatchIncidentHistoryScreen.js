@@ -1,16 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  RefreshControl,
-} from 'react-native';
-import { supabase } from '../config/supabaseClient';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+const React = require('react');
+const { useState, useEffect } = React;
+const { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, RefreshControl } = require('react-native');
+const { supabase } = require('../config/supabaseClient');
+const AsyncStorage = require('@react-native-async-storage/async-storage');
 
 const DispatchIncidentHistoryScreen = ({ navigation }) => {
   const [incidents, setIncidents] = useState([]);
@@ -97,7 +89,7 @@ const DispatchIncidentHistoryScreen = ({ navigation }) => {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Icon name="arrow-left" size={24} color="#000" />
+          <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Incident History</Text>
       </View>
@@ -152,7 +144,6 @@ const DispatchIncidentHistoryScreen = ({ navigation }) => {
       >
         {incidents.length === 0 ? (
           <View style={styles.emptyState}>
-            <Icon name="history" size={48} color="#8E8E93" />
             <Text style={styles.emptyStateText}>No incidents found</Text>
           </View>
         ) : (
@@ -177,19 +168,16 @@ const DispatchIncidentHistoryScreen = ({ navigation }) => {
               </View>
 
               <View style={styles.detailRow}>
-                <Icon name="map-marker" size={20} color="#007AFF" />
                 <Text style={styles.detailText}>{incident.location}</Text>
               </View>
 
               <View style={styles.detailRow}>
-                <Icon name="clock-outline" size={20} color="#007AFF" />
                 <Text style={styles.detailText}>
                   {new Date(incident.created_at).toLocaleString()}
                 </Text>
               </View>
 
               <View style={styles.detailRow}>
-                <Icon name="flag" size={20} color="#007AFF" />
                 <View
                   style={[
                     styles.priorityBadge,
@@ -228,6 +216,10 @@ const styles = StyleSheet.create({
   },
   backButton: {
     marginRight: 20,
+  },
+  backButtonText: {
+    fontSize: 16,
+    color: '#007AFF',
   },
   title: {
     fontSize: 24,
@@ -336,4 +328,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default DispatchIncidentHistoryScreen; 
+module.exports = DispatchIncidentHistoryScreen;

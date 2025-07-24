@@ -7,7 +7,6 @@ import {
   Image,
   SafeAreaView,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { supabase } from '../config/supabaseClient';
 
 const MenuScreen = ({ navigation }) => {
@@ -67,14 +66,12 @@ const MenuScreen = ({ navigation }) => {
             style={styles.menuItem}
             onPress={item.onPress}
           >
-            <Icon name={item.icon} size={24} color="#666" />
             <Text style={styles.menuText}>{item.title}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
       <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-        <Icon name="logout" size={24} color="#DC3545" />
         <Text style={styles.signOutText}>Sign Out</Text>
       </TouchableOpacity>
     </SafeAreaView>
@@ -151,4 +148,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default MenuScreen; 
+export default MenuScreen;

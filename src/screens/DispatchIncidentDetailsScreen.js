@@ -1,17 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  RefreshControl,
-  Image,
-} from 'react-native';
-import { supabase } from '../lib/supabase';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+const React = require('react');
+const { useState, useEffect } = React;
+const { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, RefreshControl, Image } = require('react-native');
+const { supabase } = require('../lib/supabase');
+const AsyncStorage = require('@react-native-async-storage/async-storage');
 
 const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
   const { incident, onStatusChange } = route.params;
@@ -25,7 +16,7 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
 
   const getAddressFromCoords = async (latitude, longitude) => {
     try {
-      const apiKey = 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E';
+      const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
       const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`;
       const response = await fetch(url);
       const data = await response.json();
@@ -199,7 +190,6 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Icon name="arrow-left" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.title}>Incident Details</Text>
       </View>
@@ -220,28 +210,25 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
               ]}
             >
               <Text style={styles.statusText}>
-                {(incidentDetails.status || 'Unknown').toUpperCase()}
-              </Text>
+                {(incidentDetails.status || 'Unknown').toUpperCase()
+              }</Text>
             </View>
           </View>
 
           {/* Incident Type */}
           <View style={styles.detailRow}>
-            <Icon name="alert-circle" size={20} color="#007AFF" />
             <Text style={styles.detailText}>Type: {incidentDetails.incident_type || 'Not specified'}</Text>
           </View>
 
           {/* Station Information */}
           {incidentDetails.station_id && (
             <View style={styles.detailRow}>
-              <Icon name="office-building" size={20} color="#007AFF" />
               <Text style={styles.detailText}>Station: {incidentDetails.station_id}</Text>
             </View>
           )}
 
           {/* Date/Time Incident was sent by user */}
           <View style={styles.detailRow}>
-            <Icon name="clock-outline" size={20} color="#007AFF" />
             <Text style={styles.detailText}>
               Reported: {incidentDetails.created_at ? new Date(incidentDetails.created_at).toLocaleString() : 'N/A'}
             </Text>
@@ -250,7 +237,6 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
           {/* Date/Time Station approved */}
           {incidentDetails.approved_at && (
             <View style={styles.detailRow}>
-              <Icon name="check-circle" size={20} color="#007AFF" />
               <Text style={styles.detailText}>
                 Approved: {new Date(incidentDetails.approved_at).toLocaleString()}
               </Text>
@@ -262,19 +248,16 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
             <>
               {reporterProfile.full_name && (
                 <View style={styles.detailRow}>
-                  <Icon name="account" size={20} color="#007AFF" />
                   <Text style={styles.detailText}>Reporter: {reporterProfile.full_name}</Text>
                 </View>
               )}
               {reporterProfile.phone && (
                 <View style={styles.detailRow}>
-                  <Icon name="phone" size={20} color="#007AFF" />
                   <Text style={styles.detailText}>Phone: {reporterProfile.phone}</Text>
                 </View>
               )}
               {reporterProfile.email && (
                 <View style={styles.detailRow}>
-                  <Icon name="email" size={20} color="#007AFF" />
                   <Text style={styles.detailText}>Email: {reporterProfile.email}</Text>
                 </View>
               )}
@@ -284,7 +267,6 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
           {/* Priority row: only show if priority is set and not unknown */}
           {incidentDetails.priority && incidentDetails.priority.toLowerCase() !== 'unknown' && (
           <View style={styles.detailRow}>
-            <Icon name="flag" size={20} color="#007AFF" />
             <View
               style={[
                 styles.priorityBadge,
@@ -299,18 +281,12 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
           )}
 
           <View style={styles.detailRow}>
-            <Icon name="map-marker" size={20} color="#007AFF" />
-            {addressLoading ? (
-              <Text style={styles.detailText}>Loading address...</Text>
-            ) : (
-              <Text style={styles.detailText}>{locationAddress}</Text>
-            )}
+            <Text style={styles.detailText}>{addressLoading ? 'Loading address...' : locationAddress}</Text>
           </View>
 
           {/* If you have address field, show it here */}
           {incidentDetails.address && (
             <View style={styles.detailRow}>
-              <Icon name="map" size={20} color="#007AFF" />
               <Text style={styles.detailText}>Address: {incidentDetails.address}</Text>
             </View>
           )}
@@ -318,21 +294,18 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
           {/* Additional incident details */}
           {incidentDetails.severity && (
             <View style={styles.detailRow}>
-              <Icon name="alert-circle" size={20} color="#007AFF" />
               <Text style={styles.detailText}>Severity: {incidentDetails.severity}</Text>
             </View>
           )}
 
           {incidentDetails.emergency_level && (
             <View style={styles.detailRow}>
-              <Icon name="fire" size={20} color="#007AFF" />
               <Text style={styles.detailText}>Emergency Level: {incidentDetails.emergency_level}</Text>
             </View>
           )}
 
           {incidentDetails.additional_info && (
           <View style={styles.detailRow}>
-              <Icon name="information" size={20} color="#007AFF" />
               <Text style={styles.detailText}>Additional Info: {incidentDetails.additional_info}</Text>
           </View>
           )}
@@ -377,7 +350,6 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
                         justifyContent: 'center', 
                         alignItems: 'center' 
                       }}>
-                        <Icon name="play-circle" size={40} color="#fff" />
                         <Text style={{ color: '#fff', marginTop: 8 }}>Video</Text>
                       </View>
                     ) : (
@@ -389,7 +361,6 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
                         justifyContent: 'center', 
                         alignItems: 'center' 
                       }}>
-                        <Icon name="file" size={40} color="#666" />
                         <Text style={{ color: '#666', marginTop: 8 }}>File</Text>
                       </View>
                     )}
@@ -444,7 +415,6 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
             style={styles.trackButton}
             onPress={handleTrackIncident}
           >
-            <Icon name="map-marker-radius" size={20} color="#fff" />
             <Text style={styles.trackButtonText}>Track Incident</Text>
           </TouchableOpacity>
         </View>
@@ -597,4 +567,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default DispatchIncidentDetailsScreen; 
+module.exports = DispatchIncidentDetailsScreen;

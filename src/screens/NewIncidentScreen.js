@@ -11,7 +11,6 @@ import {
 import { TextInput, Button } from 'react-native-paper';
 import { supabase } from '../config/supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const NewIncidentScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
@@ -91,7 +90,6 @@ const NewIncidentScreen = ({ navigation }) => {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Icon name="arrow-left" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.title}>New Incident</Text>
       </View>
@@ -258,4 +256,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default NewIncidentScreen; 
+export default NewIncidentScreen;

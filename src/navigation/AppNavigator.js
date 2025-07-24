@@ -1,52 +1,52 @@
-import React, { useState, useEffect } from 'react';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { View, ActivityIndicator, StyleSheet, Text, TouchableOpacity } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
-import { createDrawerNavigator } from '@react-navigation/drawer';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+const React = require('react');
+const { useState, useEffect } = React;
+const { createNativeStackNavigator } = require('@react-navigation/native-stack');
+const { View, ActivityIndicator, StyleSheet, Text, TouchableOpacity } = require('react-native');
+const AsyncStorage = require('@react-native-async-storage/async-storage');
+const { createBottomTabNavigator } = require('@react-navigation/bottom-tabs');
+const { Ionicons } = require('@expo/vector-icons');
+const { createDrawerNavigator } = require('@react-navigation/drawer');
 
-import WelcomeScreen from '../screens/WelcomeScreen';
-import LoginSelectionScreen from '../screens/LoginSelectionScreen';
-import UserLoginScreen from '../screens/UserLoginScreen';
-import UserSignupScreen from '../screens/UserSignupScreen';
-import FirefighterLoginScreen from '../screens/FirefighterLoginScreen';
-import DispatcherLoginScreen from '../screens/DispatcherLoginScreen';
-import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
-import UserHomeScreen from '../screens/UserHomeScreen';
-import FirefighterHomeScreen from '../screens/FirefighterHomeScreen';
-import FirefighterIncidentScreen from '../screens/FirefighterIncidentScreen';
-import ProfileScreen from '../screens/ProfileScreen';
-import EditProfileScreen from '../screens/EditProfileScreen';
-import ReportIncidentScreen from '../screens/ReportIncidentScreen';
-import IncidentTrackingScreen from '../screens/IncidentTrackingScreen';
-import IncidentChatScreen from '../screens/IncidentChatScreen';
-import FirefighterProfileScreen from '../screens/FirefighterProfileScreen';
-import FirefighterTeamScreen from '../screens/FirefighterTeamScreen';
-import IncidentResponseScreen from '../screens/IncidentResponseScreen';
-import UserReportHistoryScreen from '../screens/UserReportHistoryScreen';
-import SafetyGuidelinesScreen from '../screens/SafetyGuidelinesScreen';
-import SafetyScreen from '../screens/SafetyScreen';
-import UserSelectionScreen from '../screens/UserSelectionScreen';
-import DispatcherDashboard from '../screens/DispatcherDashboard';
-import NewIncidentScreen from '../screens/NewIncidentScreen';
-import IncidentDetailsScreen from '../screens/IncidentDetailsScreen';
-import IncidentHistoryScreen from '../screens/IncidentHistoryScreen';
-import MenuScreen from '../screens/MenuScreen';
-import UserBookingTrainingScreen from '../screens/UserBookingTrainingScreen';
-import RateServiceScreen from '../screens/RateServiceScreen';
-import FirefighterTrainingApprovalScreen from '../screens/FirefighterTrainingApprovalScreen';
-import UserNotificationsScreen from '../screens/UserNotificationsScreen';
-import CallLogsScreen from '../screens/CallLogsScreen';
-import { getCurrentUser, initializeAuth } from '../services/auth';
-import FirefighterNotificationsScreen from '../screens/FirefighterNotificationsScreen';
-import DispatchIncidentHistoryScreen from '../screens/DispatchIncidentHistoryScreen';
-import DispatchTrackingScreen from '../screens/DispatchTrackingScreen';
-import DispatchIncidentDetailsScreen from '../screens/DispatchIncidentDetailsScreen';
-import DispatchNewIncidentScreen from '../screens/DispatchNewIncidentScreen';
-import { useAuth } from '../context/AuthContext';
-import CustomSplashScreen from '../components/SplashScreen';
+const WelcomeScreen = require('../screens/WelcomeScreen').default || require('../screens/WelcomeScreen');
+const LoginSelectionScreen = require('../screens/LoginSelectionScreen').default || require('../screens/LoginSelectionScreen');
+const UserLoginScreen = require('../screens/UserLoginScreen').default || require('../screens/UserLoginScreen');
+const UserSignupScreen = require('../screens/UserSignupScreen').default || require('../screens/UserSignupScreen');
+const FirefighterLoginScreen = require('../screens/FirefighterLoginScreen').default || require('../screens/FirefighterLoginScreen');
+const DispatcherLoginScreen = require('../screens/DispatcherLoginScreen').default || require('../screens/DispatcherLoginScreen');
+const ForgotPasswordScreen = require('../screens/ForgotPasswordScreen').default || require('../screens/ForgotPasswordScreen');
+const UserHomeScreen = require('../screens/UserHomeScreen').default || require('../screens/UserHomeScreen');
+const FirefighterHomeScreen = require('../screens/FirefighterHomeScreen').default || require('../screens/FirefighterHomeScreen');
+const FirefighterIncidentScreen = require('../screens/FirefighterIncidentScreen').default || require('../screens/FirefighterIncidentScreen');
+const ProfileScreen = require('../screens/ProfileScreen').default || require('../screens/ProfileScreen');
+const EditProfileScreen = require('../screens/EditProfileScreen').default || require('../screens/EditProfileScreen');
+const ReportIncidentScreen = require('../screens/ReportIncidentScreen').default || require('../screens/ReportIncidentScreen');
+const IncidentTrackingScreen = require('../screens/IncidentTrackingScreen').default || require('../screens/IncidentTrackingScreen');
+const IncidentChatScreen = require('../screens/IncidentChatScreen').default || require('../screens/IncidentChatScreen');
+const FirefighterProfileScreen = require('../screens/FirefighterProfileScreen').default || require('../screens/FirefighterProfileScreen');
+const FirefighterTeamScreen = require('../screens/FirefighterTeamScreen').default || require('../screens/FirefighterTeamScreen');
+const IncidentResponseScreen = require('../screens/IncidentResponseScreen').default || require('../screens/IncidentResponseScreen');
+const UserReportHistoryScreen = require('../screens/UserReportHistoryScreen').default || require('../screens/UserReportHistoryScreen');
+const SafetyGuidelinesScreen = require('../screens/SafetyGuidelinesScreen').default || require('../screens/SafetyGuidelinesScreen');
+const SafetyScreen = require('../screens/SafetyScreen').default || require('../screens/SafetyScreen');
+const UserSelectionScreen = require('../screens/UserSelectionScreen').default || require('../screens/UserSelectionScreen');
+const DispatcherDashboard = require('../screens/DispatcherDashboard').default || require('../screens/DispatcherDashboard');
+const NewIncidentScreen = require('../screens/NewIncidentScreen').default || require('../screens/NewIncidentScreen');
+const IncidentDetailsScreen = require('../screens/IncidentDetailsScreen').default || require('../screens/IncidentDetailsScreen');
+const IncidentHistoryScreen = require('../screens/IncidentHistoryScreen').default || require('../screens/IncidentHistoryScreen');
+const MenuScreen = require('../screens/MenuScreen').default || require('../screens/MenuScreen');
+const UserBookingTrainingScreen = require('../screens/UserBookingTrainingScreen').default || require('../screens/UserBookingTrainingScreen');
+const RateServiceScreen = require('../screens/RateServiceScreen').default || require('../screens/RateServiceScreen');
+const FirefighterTrainingApprovalScreen = require('../screens/FirefighterTrainingApprovalScreen').default || require('../screens/FirefighterTrainingApprovalScreen');
+const UserNotificationsScreen = require('../screens/UserNotificationsScreen').default || require('../screens/UserNotificationsScreen');
+const CallLogsScreen = require('../screens/CallLogsScreen').default || require('../screens/CallLogsScreen');
+const { getCurrentUser, initializeAuth } = require('../services/auth');
+const FirefighterNotificationsScreen = require('../screens/FirefighterNotificationsScreen').default || require('../screens/FirefighterNotificationsScreen');
+const DispatchIncidentHistoryScreen = require('../screens/DispatchIncidentHistoryScreen').default || require('../screens/DispatchIncidentHistoryScreen');
+const DispatchTrackingScreen = require('../screens/DispatchTrackingScreen').default || require('../screens/DispatchTrackingScreen');
+const DispatchIncidentDetailsScreen = require('../screens/DispatchIncidentDetailsScreen').default || require('../screens/DispatchIncidentDetailsScreen');
+const DispatchNewIncidentScreen = require('../screens/DispatchNewIncidentScreen').default || require('../screens/DispatchNewIncidentScreen');
+const { useAuth } = require('../context/AuthContext');
+const CustomSplashScreen = require('../components/SplashScreen').default || require('../components/SplashScreen');
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -185,7 +185,7 @@ const MenuButton = ({ navigation }) => (
     onPress={() => navigation.openDrawer()}
     style={{ marginLeft: 15 }}
   >
-    <Icon name="menu" size={24} color="#000" />
+    <Ionicons name="menu" size={24} color="#000" />
   </TouchableOpacity>
 );
 
@@ -331,7 +331,7 @@ const AppNavigator = () => {
   );
 };
 
-export default AppNavigator;
+module.exports = AppNavigator;
 
 const styles = StyleSheet.create({
   loadingContainer: {

@@ -30,7 +30,7 @@ const UserHomeScreen = () => {
 
   // Google Places API configuration
   const googlePlacesQuery = {
-    key: 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E',
+    key: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
     language: 'en',
     components: 'country:gh',
     types: '(cities)',

@@ -71,7 +71,7 @@ export default function ReportIncidentScreen() {
 
   // Memoize the Google Places Autocomplete query
   const googlePlacesQuery = React.useMemo(() => ({
-    key: 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E',
+    key: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
     language: 'en',
     components: 'country:gh',
     types: '(cities)',  // Limit to cities for faster results
@@ -124,7 +124,7 @@ export default function ReportIncidentScreen() {
         return;
       }
       try {
-        const apiKey = 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E';
+        const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
         const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${apiKey}&components=country:gh`;
         const response = await fetch(url);
         const data = await response.json();
@@ -230,7 +230,7 @@ export default function ReportIncidentScreen() {
   };
 
   const getAddressFromGoogle = async (latitude, longitude) => {
-    const apiKey = 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E';
+    const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
     const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`;
     try {
       const response = await fetch(url);
@@ -1213,7 +1213,7 @@ export default function ReportIncidentScreen() {
     setShowPlaceSuggestions(false);
     setLoading(true);
     try {
-      const apiKey = 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E';
+      const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
       const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${suggestion.place_id}&key=${apiKey}&fields=geometry,formatted_address`;
       const response = await fetch(url);
       const data = await response.json();
@@ -1323,7 +1323,7 @@ export default function ReportIncidentScreen() {
                 setLoading(true);
                 try {
                   // Geocode the manual location using Google Maps Geocoding API
-                  const apiKey = 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E';
+                  const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
                   const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(manualLocation)}&key=${apiKey}`;
                   const response = await fetch(url);
                   const data = await response.json();

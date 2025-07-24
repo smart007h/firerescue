@@ -479,7 +479,7 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
         const [lat, lng] = location.split(',').map(Number);
         if (!isNaN(lat) && !isNaN(lng)) {
           // Use Google Maps Geocoding API instead of getAddressFromCoordinates
-          const apiKey = 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E';
+          const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
           const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`;
           try {
             const response = await fetch(url);

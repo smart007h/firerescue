@@ -9,8 +9,7 @@ import {
   FlatList,
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
-import { TextInput, IconButton } from 'react-native-paper';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { TextInput } from 'react-native-paper';
 import { supabase } from '../lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -122,7 +121,7 @@ const TrackingMapScreen = ({ route, navigation }) => {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Icon name="arrow-left" size={24} color="#000" />
+          <Text style={{ fontSize: 24, color: '#000' }}>&lt; Back</Text>
         </TouchableOpacity>
         <Text style={styles.title}>Track Incident</Text>
         <Text style={styles.incidentType}>{incident.type}</Text>
@@ -274,4 +273,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default TrackingMapScreen; 
+export default TrackingMapScreen;

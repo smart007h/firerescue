@@ -1,13 +1,15 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { View, ActivityIndicator, StyleSheet, Platform, Text, TouchableOpacity } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
-import { useRoute, useNavigation } from '@react-navigation/native';
-import { supabase } from '../config/supabaseClient';
-import { Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
-import { useAuth } from '../context/AuthContext';
+const React = require('react');
+const { useEffect, useState, useRef } = React;
+const { View, ActivityIndicator, StyleSheet, Platform, Text, TouchableOpacity } = require('react-native');
+const MapView = require('react-native-maps').default || require('react-native-maps');
+const { Marker, Polyline, PROVIDER_GOOGLE } = require('react-native-maps');
+const { useRoute, useNavigation } = require('@react-navigation/native');
+const { supabase } = require('../config/supabaseClient');
+const { Ionicons } = require('@expo/vector-icons');
+const { Audio } = require('expo-av');
+const { useAuth } = require('../context/AuthContext');
 
-export default function DispatchTrackingScreen() {
+function DispatchTrackingScreen() {
   const route = useRoute();
   const navigation = useNavigation();
   const { incidentId } = route.params;
@@ -39,136 +41,7 @@ export default function DispatchTrackingScreen() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!incidentId || !currentUser) return;
-    // Subscribe to new chat messages for this incident
-    const subscription = supabase
-      .channel('chat-messages-' + incidentId)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'chat_messages',
-        filter: `incident_id=eq.${incidentId}`
-      }, async (payload) => {
-        // Only count as unread if not sent by current user and chat is not open
-        if (payload.new.sender_id !== currentUser.id && !chatOpen) {
-          setUnreadCount((prev) => prev + 1);
-          if (notificationSound.current) {
-            try { await notificationSound.current.replayAsync(); } catch (e) {}
-          }
-        }
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(subscription); };
-  }, [incidentId, currentUser, chatOpen]);
-
-  useEffect(() => {
-    if (!incidentId || !currentUser) return;
-    // Fetch unread count from DB
-    const fetchUnread = async () => {
-      const { data, error } = await supabase.rpc('count_unread_messages', {
-        incident_id_param: incidentId,
-        user_id_param: currentUser.id
-      });
-      if (!error && data) setUnreadCount(data);
-    };
-    fetchUnread();
-  }, [incidentId, currentUser]);
-
-  const handleOpenChat = async () => {
-    setChatOpen(true);
-    navigation.navigate('IncidentChat', { incidentId, onChatClose: () => setChatOpen(false) });
-    // Mark all messages as read for this user
-    await supabase.rpc('mark_messages_read', {
-      incident_id_param: incidentId,
-      user_id_param: currentUser.id
-    });
-    setUnreadCount(0);
-  };
-
-  const loadTrackingData = async () => {
-    setLoading(true);
-    try {
-      // Fetch incident details
-      const { data: incidentData, error: incidentError } = await supabase
-        .from('incidents')
-        .select('*')
-        .eq('id', incidentId)
-        .single();
-      if (incidentError || !incidentData) throw incidentError || new Error('Incident not found');
-      setIncident(incidentData);
-      // Parse incident location
-      let incLoc = null;
-      if (incidentData.location) {
-        const coords = incidentData.location.split(',');
-        if (coords.length === 2) {
-          incLoc = {
-            latitude: parseFloat(coords[0]),
-            longitude: parseFloat(coords[1]),
-          };
-        }
-      }
-      setIncidentLocation(incLoc);
-      // Fetch dispatcher location
-      let dispLoc = null;
-      if (incidentData.dispatcher_id) {
-        const { data: dispatcherData } = await supabase
-          .from('dispatcher_locations')
-          .select('latitude, longitude')
-          .eq('dispatcher_id', incidentData.dispatcher_id)
-          .single();
-        if (dispatcherData) {
-          dispLoc = {
-            latitude: parseFloat(dispatcherData.latitude),
-            longitude: parseFloat(dispatcherData.longitude),
-          };
-        }
-      }
-      setDispatcherLocation(dispLoc);
-      // Fetch route from Google Directions API
-      if (dispLoc && incLoc) {
-        const apiKey = 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E';
-        const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${dispLoc.latitude},${dispLoc.longitude}&destination=${incLoc.latitude},${incLoc.longitude}&key=${apiKey}`;
-        const response = await fetch(url);
-        const data = await response.json();
-        if (data.routes && data.routes.length) {
-          const points = decodePolyline(data.routes[0].overview_polyline.points);
-          setRouteCoordinates(points);
-        }
-      }
-    } catch (error) {
-      // Optionally handle error
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  function decodePolyline(encoded) {
-    let points = [];
-    let index = 0, len = encoded.length;
-    let lat = 0, lng = 0;
-    while (index < len) {
-      let b, shift = 0, result = 0;
-      do {
-        b = encoded.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      let dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
-      lat += dlat;
-      shift = 0;
-      result = 0;
-      do {
-        b = encoded.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      let dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
-      lng += dlng;
-      points.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
-    }
-    return points;
-  }
+  // ...existing code...
 
   if (loading) {
     return (
@@ -246,6 +119,7 @@ export default function DispatchTrackingScreen() {
     </View>
   );
 }
+module.exports = DispatchTrackingScreen;
 
 const styles = StyleSheet.create({
   container: {
@@ -289,4 +163,6 @@ const styles = StyleSheet.create({
     elevation: 4,
     zIndex: 20,
   },
-}); 
+});
+
+module.exports = DispatchTrackingScreen;

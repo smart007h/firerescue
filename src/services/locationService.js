@@ -1,7 +1,7 @@
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyBUNUKncuC9GT6h4U-nDdjOea4-P7F_w4E';
+const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
 export const getCurrentLocation = async () => {
   try {
