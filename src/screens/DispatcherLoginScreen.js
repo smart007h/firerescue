@@ -126,14 +126,15 @@ const DispatcherLoginScreen = ({ navigation }) => {
         >
           <ScrollView contentContainerStyle={styles.scrollContent}>
             <TouchableOpacity
-              style={styles.backButton}
+              style={styles.returnButtonTop}
               onPress={() => navigation.goBack()}
             >
-              <Ionicons name="arrow-back" size={24} color="#fff" />
+              <Ionicons name="arrow-back" size={20} color="#007AFF" style={{ marginRight: 5 }} />
+              <Text style={styles.returnButtonText}>Return to Selection</Text>
             </TouchableOpacity>
 
             <View style={styles.header}>
-              <Ionicons name="radio" size={60} color="#fff" />
+              <Ionicons name="radio" size={60} color="#fff" style={styles.headerIcon} />
               <Text style={styles.title}>Dispatcher Login</Text>
               <Text style={styles.subtitle}>Access your dispatcher dashboard</Text>
             </View>
@@ -141,21 +142,27 @@ const DispatcherLoginScreen = ({ navigation }) => {
             <View style={styles.formContainer}>
               {error && (
                 <View style={styles.errorContainer}>
+                  <Ionicons name="warning" size={20} color="#c62828" style={{ marginRight: 6 }} />
                   <Text style={styles.errorText}>{error}</Text>
                 </View>
               )}
 
-              <TextInput
-                label="Email"
-                value={email}
-                onChangeText={setEmail}
-                mode="outlined"
-                style={styles.input}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
+              <View style={styles.inputWrapper}>
+                <Ionicons name="mail" size={22} color="#007AFF" style={styles.inputIcon} />
+                <TextInput
+                  label="Email"
+                  value={email}
+                  onChangeText={setEmail}
+                  mode="outlined"
+                  style={styles.input}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  theme={{ colors: { primary: '#007AFF' } }}
+                />
+              </View>
 
-              <View style={styles.passwordContainer}>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="lock-closed" size={22} color="#007AFF" style={styles.inputIcon} />
                 <TextInput
                   label="Password"
                   value={password}
@@ -169,6 +176,7 @@ const DispatcherLoginScreen = ({ navigation }) => {
                       onPress={() => setShowPassword(!showPassword)}
                     />
                   }
+                  theme={{ colors: { primary: '#007AFF' } }}
                 />
               </View>
 
@@ -180,7 +188,10 @@ const DispatcherLoginScreen = ({ navigation }) => {
                 {loading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.buttonText}>Login</Text>
+                  <>
+                    <Ionicons name="log-in" size={20} color="#fff" style={styles.buttonIcon} />
+                    <Text style={styles.buttonText}>Login</Text>
+                  </>
                 )}
               </TouchableOpacity>
 
@@ -188,21 +199,16 @@ const DispatcherLoginScreen = ({ navigation }) => {
                 style={styles.forgotPassword}
                 onPress={handleForgotPassword}
               >
+                <Ionicons name="help-circle" size={18} color="#007AFF" style={{ marginRight: 4 }} />
                 <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.backButton}
-                onPress={() => navigation.goBack()}
-              >
-                <Text style={styles.backButtonText}>Back to Selection</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.button, { backgroundColor: '#c62828', marginTop: 10 }]}
                 onPress={handleClearStorage}
               >
-                <Text style={styles.buttonText}>Clear Storage (Debug)</Text>
+                <Ionicons name="trash" size={18} color="#fff" style={styles.buttonIcon} />
+                <Text style={styles.buttonText}>Clear Storage</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -217,28 +223,80 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     height: '100%',
+    resizeMode: 'cover',
   },
   container: {
     flex: 1,
+    width: '100%',
+    minHeight: '100%',
+    justifyContent: 'flex-start',
+    alignItems: 'stretch',
+    paddingTop: 0,
+    paddingBottom: 0,
   },
   keyboardView: {
     flex: 1,
+    width: '100%',
+    justifyContent: 'flex-start',
+    alignItems: 'stretch',
   },
   scrollContent: {
     flexGrow: 1,
-    padding: 20,
+    paddingHorizontal: 0,
+    paddingVertical: 24,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'flex-start',
+    alignItems: 'stretch',
+    minHeight: '100%',
   },
   backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
+    display: 'none',
+  },
+  returnButtonTop: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    justifyContent: 'flex-start',
+    position: 'absolute',
+    top: 16,
+    left: 4,
+    zIndex: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#f0f4ff',
+    borderRadius: 20,
+    width: 'auto',
+    maxWidth: 180,
+    alignSelf: 'flex-start',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+  },
+  returnButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    marginBottom: 10,
+    paddingVertical: 10,
+    backgroundColor: '#f0f4ff',
+    borderRadius: 8,
+    width: '100%',
+    maxWidth: 350,
+    alignSelf: 'center',
   },
   header: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 32,
+    paddingTop: 24,
+    paddingHorizontal: 0,
+  },
+  headerIcon: {
+    backgroundColor: 'rgba(0,122,255,0.15)',
+    borderRadius: 30,
+    padding: 10,
+    marginBottom: 8,
   },
   title: {
     fontSize: 32,
@@ -254,20 +312,47 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
+    borderRadius: 16,
+    padding: 24,
     elevation: 4,
+    width: '90%',
+    maxWidth: 400,
+    alignSelf: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    marginTop: 0,
+    marginBottom: 24,
   },
-  input: {
-    marginBottom: 16,
-    backgroundColor: '#fff',
-  },
-  passwordContainer: {
+  inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 10,
+    marginBottom: 18,
+    paddingHorizontal: 10,
+    height: 56,
+    width: '100%',
+    maxWidth: 350,
+    alignSelf: 'center',
+  },
+  inputIcon: {
+    marginRight: 10,
+  },
+  input: {
     backgroundColor: '#fff',
-    borderRadius: 5,
-    marginBottom: 15,
+    fontSize: 16,
+    flex: 1,
+    minWidth: 0,
+    maxWidth: 350,
+    borderRadius: 8,
+    paddingLeft: 0,
+    marginBottom: 0,
+    elevation: 0,
+  },
+  passwordContainer: {
+    display: 'none',
   },
   passwordInput: {
     flex: 1,
@@ -278,10 +363,18 @@ const styles = StyleSheet.create({
   },
   button: {
     backgroundColor: '#007AFF',
-    padding: 12,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: 10,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 12,
+    width: '100%',
+    maxWidth: 350,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  buttonIcon: {
+    marginRight: 8,
   },
   buttonDisabled: {
     opacity: 0.7,
@@ -292,10 +385,15 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#ffebee',
     padding: 10,
-    borderRadius: 5,
+    borderRadius: 8,
     marginBottom: 15,
+    width: '100%',
+    maxWidth: 350,
+    alignSelf: 'center',
   },
   errorText: {
     color: '#c62828',
@@ -303,8 +401,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   forgotPassword: {
+    flexDirection: 'row',
+    alignItems: 'center',
     alignSelf: 'flex-end',
     marginBottom: 20,
+    marginTop: 4,
   },
   forgotPasswordText: {
     color: '#007AFF',
@@ -319,6 +420,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
   },
+  returnButtonText: {
+    color: '#007AFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
 });
 
-export default DispatcherLoginScreen; 
+export default DispatcherLoginScreen;

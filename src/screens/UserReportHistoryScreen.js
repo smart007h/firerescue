@@ -272,7 +272,7 @@ const UserReportHistoryScreen = () => {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.navigate('Home')}
+          onPress={() => navigation.navigate('UserHome')}
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>

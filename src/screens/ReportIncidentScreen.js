@@ -723,18 +723,15 @@ export default function ReportIncidentScreen() {
         stationInfo: nearestStation
       });
       
-      navigation.replace('IncidentTracking', {
+      navigation.navigate('IncidentTracking', {
         incidentId,
         stationInfo: {
-          id: nearestStation.station_id,
-          name: nearestStation.station_name,
-          address: nearestStation.station_address,
-          distance: calculateDistance(
-            formData.location.latitude,
-            formData.location.longitude,
-            nearestStation.latitude,
-            nearestStation.longitude
-          ).toFixed(2)
+          latitude: nearestStation.latitude,
+          longitude: nearestStation.longitude,
+          station_address: nearestStation.station_address,
+          station_id: nearestStation.station_id,
+          station_name: nearestStation.station_name,
+          station_region: nearestStation.station_region
         }
       });
 

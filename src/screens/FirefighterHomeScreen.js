@@ -747,14 +747,21 @@ const FirefighterHomeScreen = ({ navigation }) => {
 
   const renderEmergencyCard = (emergency) => (
     <Card style={styles.emergencyCard}>
-      <TouchableOpacity 
-        onPress={handleIncidentPress}
+      <TouchableOpacity
+        onPress={() => {
+          // Trigger phone call to station contact if available
+          if (stationInfo?.station_contact) {
+            Linking.openURL(`tel:${stationInfo.station_contact}`);
+          } else {
+            Alert.alert('No contact number', 'No phone number available for this station.');
+          }
+        }}
         style={{ width: '100%' }}
       >
         <Card.Content style={{ padding: 16 }}>
           <View style={styles.emergencyHeader}>
             <View style={styles.incidentTypeContainer}>
-              <View style={[styles.incidentIconContainer, { backgroundColor: '#2196F3' }]}>
+              <View style={[styles.incidentIconContainer, { backgroundColor: '#2196F3' }]}> 
                 <Ionicons
                   name={getIncidentIcon(emergency.incident_type)}
                   size={22}
@@ -763,7 +770,7 @@ const FirefighterHomeScreen = ({ navigation }) => {
               </View>
               <Text style={styles.emergencyType}>{emergency.incident_type}</Text>
             </View>
-            <View style={[styles.statusBadge, { backgroundColor: '#e0e7ff' }]}>
+            <View style={[styles.statusBadge, { backgroundColor: '#e0e7ff' }]}> 
               <Text style={[styles.statusText, { color: '#1e40af' }]}>IN PROGRESS</Text>
             </View>
           </View>

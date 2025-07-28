@@ -472,19 +472,21 @@ const UserNotificationsScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {activeView === null ? (
-        <>
-          <View style={styles.header}>
-            <Text style={styles.title}>User Notifications</Text>
-          </View>
-          {renderMainButtons()}
-        </>
-      ) : activeView === 'callLogs' ? (
-        renderCallLogs()
-      ) : (
-        renderBookings()
-      )}
-      {renderBookingDetails()}
+      <View style={styles.gradientBg}>
+        {activeView === null ? (
+          <>
+            <View style={styles.header}>
+              <Text style={styles.title}>User Notifications</Text>
+            </View>
+            {renderMainButtons()}
+          </>
+        ) : activeView === 'callLogs' ? (
+          renderCallLogs()
+        ) : (
+          renderBookings()
+        )}
+        {renderBookingDetails()}
+      </View>
     </SafeAreaView>
   );
 };
@@ -493,6 +495,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F7FAFC',
+    position: 'relative',
+  },
+  gradientBg: {
+    flex: 1,
+    backgroundColor: 'linear-gradient(135deg, #F7FAFC 0%, #FFE6E6 100%)',
+    paddingBottom: 0,
   },
   loadingContainer: {
     flex: 1,
@@ -513,11 +521,27 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 24,
+    paddingTop: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF5F5',
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+    shadowColor: '#DC3545',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: '#1A202C',
+    color: '#DC3545',
+    letterSpacing: 1,
+    marginBottom: 4,
+    textShadowColor: '#FFE6E6',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   sectionCard: {
     marginBottom: 16,
@@ -740,23 +764,39 @@ const styles = StyleSheet.create({
   mainButtonsContainer: {
     padding: 16,
     gap: 16,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   mainButton: {
+    flex: 1,
     padding: 20,
-    borderRadius: 12,
-    elevation: 2,
+    borderRadius: 16,
+    elevation: 3,
+    marginHorizontal: 8,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
   },
   mainButtonText: {
     color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
     marginTop: 12,
     marginBottom: 4,
+    letterSpacing: 0.5,
+    textShadowColor: '#00000022',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   mainButtonSubtext: {
     color: '#FFFFFF',
     opacity: 0.9,
-    fontSize: 14,
+    fontSize: 15,
+    textAlign: 'center',
+    marginTop: 2,
   },
   viewContainer: {
     flex: 1,
