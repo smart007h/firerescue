@@ -159,7 +159,7 @@ const UserHomeScreen = () => {
 
   const handleProfilePress = async () => {
     if (profile) {
-      navigation.navigate('Profile', { profile });
+      navigation.navigate('UserProfile', { profile });
     } else {
       try {
         // Try to load profile again if it's not available
@@ -174,7 +174,7 @@ const UserHomeScreen = () => {
           if (error) throw error;
           if (profileData) {
             setProfile(profileData);
-            navigation.navigate('Profile', { profile: profileData });
+            navigation.navigate('UserProfile', { profile: profileData });
           } else {
             Alert.alert('Error', 'Profile not found');
           }
@@ -415,7 +415,7 @@ const UserHomeScreen = () => {
         <IconButton 
           icon="menu" 
           size={20} 
-          onPress={() => navigation.navigate('MenuScreen')}
+          onPress={() => navigation.openDrawer()}
           color="#000" 
         />
         <View style={styles.logoContainer}>

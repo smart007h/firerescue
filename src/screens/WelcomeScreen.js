@@ -3,6 +3,7 @@ import { View, StyleSheet, Image, Dimensions, ScrollView, Platform } from 'react
 import { Text, Button } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '../context/AuthContext';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -30,33 +31,92 @@ const slides = [
 const WelcomeScreen = ({ navigation }) => {
   const [activeSlide, setActiveSlide] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionChecked, setSessionChecked] = useState(false);
   const scrollViewRef = React.useRef(null);
+  const { userRole, loading: authLoading } = useAuth();
 
   useEffect(() => {
-    checkUserSession();
-  }, []);
+    // Only check session if auth context is not loading
+    if (!authLoading && !sessionChecked) {
+      checkUserSession();
+    }
+  }, [authLoading, sessionChecked]);
+
+  // Handle navigation based on userRole from context
+  useEffect(() => {
+    if (!authLoading && sessionChecked && userRole) {
+      navigateBasedOnRole(userRole);
+    }
+  }, [userRole, authLoading, sessionChecked]);
+
+  const navigateBasedOnRole = (role) => {
+    console.log('[WelcomeScreen] Navigating based on role:', role);
+    
+    try {
+      switch (role) {
+        case 'dispatcher':
+          navigation.replace('DispatcherDashboard');
+          break;
+        case 'firefighter':
+          navigation.replace('FirefighterMain');
+          break;
+        case 'user':
+          // Navigate to the UserStack root, which will show UserMain by default
+          navigation.replace('UserMain');
+          break;
+        default:
+          navigation.replace('UserSelectionScreen');
+      }
+    } catch (error) {
+      console.error('[WelcomeScreen] Navigation error:', error);
+      navigation.replace('UserSelectionScreen');
+    }
+  };
 
   const checkUserSession = async () => {
     try {
+      setIsLoading(true);
+      console.log('[WelcomeScreen] Checking user session...');
+      
       const sessionStr = await AsyncStorage.getItem('supabase-session');
       const userDataStr = await AsyncStorage.getItem('userData');
-      
+
       if (sessionStr && userDataStr) {
         const session = JSON.parse(sessionStr);
         const userData = JSON.parse(userDataStr);
-        
+
+        console.log('[WelcomeScreen] Found session:', !!session);
+        console.log('[WelcomeScreen] User role:', userData?.role);
+
         // If session exists and not expired
         if (session && session.expires_at * 1000 > Date.now()) {
-          // Navigate directly to the appropriate home screen
-          navigation.replace('UserMain', { screen: 'Home' });
+          // Let the useEffect handle navigation based on userRole from context
+          setSessionChecked(true);
+          setIsLoading(false);
           return;
+        } else {
+          console.log('[WelcomeScreen] Session expired or invalid');
         }
+      } else {
+        console.log('[WelcomeScreen] No session found');
       }
+
+      // If no valid session found
+      setSessionChecked(true);
+      setIsLoading(false);
       
-      setIsLoading(false);
+      // Small delay to prevent immediate navigation
+      setTimeout(() => {
+        if (!userRole) {
+          navigation.replace('UserSelectionScreen');
+        }
+      }, 1000);
+
     } catch (error) {
-      console.error('Error checking user session:', error);
+      console.error('[WelcomeScreen] Error checking user session:', error);
+      setSessionChecked(true);
       setIsLoading(false);
+      navigation.replace('UserSelectionScreen');
     }
   };
 
@@ -67,12 +127,22 @@ const WelcomeScreen = ({ navigation }) => {
     setActiveSlide(activeIndex);
   }, []);
 
+  const navigateToUserSelection = () => {
+    try {
+      navigation.replace('UserSelectionScreen');
+    } catch (error) {
+      console.error('[WelcomeScreen] Error navigating to UserSelectionScreen:', error);
+      // Fallback navigation
+      navigation.navigate('LoginSelection');
+    }
+  };
+
   const handleGetStarted = () => {
-    navigation.navigate('UserSelectionScreen');
+    navigateToUserSelection();
   };
 
   const handleSkip = () => {
-    navigation.navigate('UserSelectionScreen');
+    navigateToUserSelection();
   };
 
   const handleNext = () => {
@@ -97,11 +167,31 @@ const WelcomeScreen = ({ navigation }) => {
     </View>
   );
 
-  if (isLoading) {
+  // Show loading while checking session or auth is loading
+  if (isLoading || authLoading || !sessionChecked) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
+          <Image 
+            source={require('../assets/images/logo.jpeg')} 
+            style={styles.loadingLogo}
+            resizeMode="contain"
+          />
           <Text style={styles.loadingText}>Loading...</Text>
+          <Text style={styles.loadingSubtext}>
+            {authLoading ? 'Authenticating...' : 'Checking session...'}
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // If user has a role and session is valid, don't show welcome screen
+  if (userRole && sessionChecked) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Redirecting...</Text>
         </View>
       </SafeAreaView>
     );
@@ -191,10 +281,24 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  loadingLogo: {
+    width: 80,
+    height: 80,
+    marginBottom: 20,
+    borderRadius: 40,
   },
   loadingText: {
-    fontSize: 16,
+    fontSize: 18,
     color: '#DC3545',
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  loadingSubtext: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
   },
   header: {
     alignItems: 'center',
@@ -227,6 +331,7 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 32,
     textAlign: 'center',
+    fontStyle: 'italic',
   },
   carouselContainer: {
     flex: 1,
@@ -265,11 +370,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 8,
     textAlign: 'center',
+    color: '#333',
   },
   slideDescription: {
     fontSize: 16,
     textAlign: 'center',
     color: '#666',
+    lineHeight: 22,
   },
   pagination: {
     flexDirection: 'row',
@@ -283,6 +390,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#ccc',
     marginHorizontal: 4,
+    transition: 'all 0.3s ease',
   },
   paginationDotActive: {
     backgroundColor: '#DC3545',

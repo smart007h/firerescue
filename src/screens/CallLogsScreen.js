@@ -20,13 +20,21 @@ const CallLogsScreen = () => {
   useEffect(() => {
     if (stationId) {
       loadCallLogs();
+    } else if (stationId === null) {
+      setLoading(false);
     }
   }, [stationId, filter]);
 
   const loadStationId = async () => {
     try {
       const id = await AsyncStorage.getItem('stationId');
-      setStationId(id);
+      if (!id) {
+        setStationId(null);
+        console.warn('No stationId found in AsyncStorage');
+        Alert.alert('Missing Station', 'No station ID found. Please log in or select a station.');
+      } else {
+        setStationId(id);
+      }
     } catch (error) {
       console.error('Error loading station ID:', error);
       Alert.alert('Error', 'Failed to load station information');
@@ -34,6 +42,12 @@ const CallLogsScreen = () => {
   };
 
   const loadCallLogs = async () => {
+    if (!stationId) {
+      setCalls([]);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     try {
       setLoading(true);
       let query = supabase
@@ -47,9 +61,18 @@ const CallLogsScreen = () => {
       }
 
       const { data, error } = await query;
-      
+      console.log('Supabase call logs response:', data); // Debug raw response
       if (error) throw error;
-      setCalls(data || []);
+      // Defensive: ensure data is always an array and filter out nulls and invalids
+      let safeData = [];
+      if (Array.isArray(data)) {
+        // Log raw array for debugging
+        console.log('Raw call logs array before filtering:', data);
+        safeData = data.filter(call => call && typeof call === 'object' && call.id);
+      } else if (data && typeof data === 'object' && data.id) {
+        safeData = [data];
+      }
+      setCalls(safeData);
     } catch (error) {
       console.error('Error loading call logs:', error);
       Alert.alert('Error', 'Failed to load call logs');
@@ -93,6 +116,14 @@ const CallLogsScreen = () => {
     });
   };
 
+  if (!stationId) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <Ionicons name="alert-circle-outline" size={48} color="#DC3545" />
+        <Text style={styles.loadingText}>No station ID found. Please log in or select a station.</Text>
+      </SafeAreaView>
+    );
+  }
   if (loading && !refreshing) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
@@ -127,54 +158,68 @@ const CallLogsScreen = () => {
           style={styles.filterButtons}
         />
 
-        {calls.length === 0 ? (
+        {Array.isArray(calls) && calls.filter(call => call && typeof call === 'object' && call.id).length === 0 ? (
           <View style={styles.emptyContainer}>
             <Ionicons name="call-outline" size={48} color="#757575" />
             <Text style={styles.emptyText}>No call logs found</Text>
           </View>
         ) : (
-          calls.map((call) => (
-            <Card key={call.id} style={styles.callCard}>
-              <Card.Content>
-                <View style={styles.callHeader}>
-                  <View style={styles.callInfo}>
-                    <Ionicons 
-                      name={getStatusIcon(call.status)} 
-                      size={24} 
-                      color={getStatusColor(call.status)} 
-                    />
-                    <View style={styles.callDetails}>
-                      <Text style={styles.phoneNumber}>{call.caller_number}</Text>
-                      <Text style={styles.callTime}>
-                        {formatDateTime(call.created_at)}
-                      </Text>
+          calls
+            .filter(call => call && typeof call === 'object' && call.id)
+            .map((call) => {
+              // Defensive: skip null/invalid calls
+              return (
+                <Card key={call.id} style={styles.callCard}>
+                  <Card.Content>
+                    <View style={styles.callHeader}>
+                      <View style={styles.callInfo}>
+                        <Ionicons 
+                          name={getStatusIcon(call.status)} 
+                          size={24} 
+                          color={getStatusColor(call.status)} 
+                        />
+                        <View style={styles.callDetails}>
+                          <Text style={styles.phoneNumber}>{call.caller_number}</Text>
+                          <Text style={styles.callTime}>
+                            {formatDateTime(call.created_at)}
+                          </Text>
+                        </View>
+                      </View>
+                      <Badge
+                        style={[
+                          styles.statusBadge,
+                          { backgroundColor: getStatusColor(call.status) }
+                        ]}
+                      >
+                        {call.status && typeof call.status === 'string'
+                          ? call.status.charAt(0).toUpperCase() + call.status.slice(1)
+                          : 'Unknown'}
+                      </Badge>
                     </View>
-                  </View>
-                  <Badge
-                    style={[
-                      styles.statusBadge,
-                      { backgroundColor: getStatusColor(call.status) }
-                    ]}
-                  >
-                    {call.status.charAt(0).toUpperCase() + call.status.slice(1)}
-                  </Badge>
-                </View>
 
-                {call.location && (
-                  <View style={styles.locationContainer}>
-                    <Ionicons name="location-outline" size={16} color="#4A5568" />
-                    <Text style={styles.locationText}>{call.location}</Text>
-                  </View>
-                )}
+                    {call.location && (
+                      <View style={styles.locationContainer}>
+                        <Ionicons name="location-outline" size={16} color="#4A5568" />
+                        <Text style={styles.locationText}>{call.location}</Text>
+                      </View>
+                    )}
 
-                {call.notes && (
-                  <View style={styles.notesContainer}>
-                    <Text style={styles.notesText}>{call.notes}</Text>
-                  </View>
-                )}
-              </Card.Content>
-            </Card>
-          ))
+                    {call.notes && (
+                      <View style={styles.notesContainer}>
+                        <Text style={styles.notesText}>{call.notes}</Text>
+                      </View>
+                    )}
+
+                    {/* Defensive: show incident if present and valid */}
+                    {call.incident && typeof call.incident === 'string' && (
+                      <View style={styles.notesContainer}>
+                        <Text style={styles.notesText}>Incident: {call.incident}</Text>
+                      </View>
+                    )}
+                  </Card.Content>
+                </Card>
+              );
+            })
         )}
       </ScrollView>
     </SafeAreaView>
