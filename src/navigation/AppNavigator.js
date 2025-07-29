@@ -10,10 +10,11 @@ const {
   Text,
   TouchableOpacity,
 } = require("react-native");
-const AsyncStorage = require("@react-native-async-storage/async-storage");
 const { createBottomTabNavigator } = require("@react-navigation/bottom-tabs");
 const { Ionicons } = require("@expo/vector-icons");
 const { createDrawerNavigator } = require("@react-navigation/drawer");
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Screen imports with consistent fallback pattern
 const WelcomeScreen =
@@ -126,6 +127,9 @@ const DispatchIncidentDetailsScreen =
 const DispatchNewIncidentScreen =
   require("../screens/DispatchNewIncidentScreen").default ||
   require("../screens/DispatchNewIncidentScreen");
+const CertificateApplicationScreen =
+  require("../screens/CertificateApplication").default ||
+  require("../screens/CertificateApplication");
 
 // Services and contexts
 const { getCurrentUser, initializeAuth } = require("../services/auth");
@@ -406,6 +410,14 @@ const UserStack = () => (
       component={IncidentChatScreen}
       options={{ 
         title: "Incident Chat",
+        drawerItemStyle: { display: 'none' }
+      }}
+    />
+    <Drawer.Screen
+      name="CertificateApplication"
+      component={CertificateApplicationScreen}
+      options={{ 
+        title: "Certificate Application",
         drawerItemStyle: { display: 'none' }
       }}
     />

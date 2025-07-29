@@ -13,6 +13,7 @@ import {
   PermissionsAndroid,
   Modal,
   FlatList,
+  Linking,
 } from 'react-native';
 import { supabase } from '../config/supabaseClient';
 import { Ionicons } from '@expo/vector-icons';
@@ -497,6 +498,29 @@ export default function ReportIncidentScreen() {
             text: 'Take Photo',
             onPress: async () => {
               try {
+                // Request camera permissions first
+                const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+                if (!cameraPermission.granted) {
+                  Alert.alert(
+                    'Permission Required',
+                    'Camera permission is required to take photos. Please enable it in your device settings.',
+                    [
+                      { text: 'OK', style: 'cancel' },
+                      {
+                        text: 'Open Settings',
+                        onPress: () => {
+                          if (Platform.OS === 'ios') {
+                            Linking.openURL('app-settings:');
+                          } else {
+                            Linking.openURL('app-settings:');
+                          }
+                        },
+                      },
+                    ]
+                  );
+                  return;
+                }
+
                 const cameraResult = await ImagePicker.launchCameraAsync({
                   mediaTypes: ImagePicker.MediaTypeOptions.Images,
                   allowsEditing: true,
@@ -525,6 +549,29 @@ export default function ReportIncidentScreen() {
             text: 'Choose from Gallery',
             onPress: async () => {
     try {
+      // Request media library permissions first
+      const mediaLibraryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!mediaLibraryPermission.granted) {
+        Alert.alert(
+          'Permission Required',
+          'Media library permission is required to select images. Please enable it in your device settings.',
+          [
+            { text: 'OK', style: 'cancel' },
+            {
+              text: 'Open Settings',
+              onPress: () => {
+                if (Platform.OS === 'ios') {
+                  Linking.openURL('app-settings:');
+                } else {
+                  Linking.openURL('app-settings:');
+                }
+              },
+            },
+          ]
+        );
+        return;
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -569,6 +616,29 @@ export default function ReportIncidentScreen() {
             text: 'Record Video',
             onPress: async () => {
               try {
+                // Request camera permissions first
+                const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+                if (!cameraPermission.granted) {
+                  Alert.alert(
+                    'Permission Required',
+                    'Camera permission is required to record videos. Please enable it in your device settings.',
+                    [
+                      { text: 'OK', style: 'cancel' },
+                      {
+                        text: 'Open Settings',
+                        onPress: () => {
+                          if (Platform.OS === 'ios') {
+                            Linking.openURL('app-settings:');
+                          } else {
+                            Linking.openURL('app-settings:');
+                          }
+                        },
+                      },
+                    ]
+                  );
+                  return;
+                }
+
                 const cameraResult = await ImagePicker.launchCameraAsync({
                   mediaTypes: ImagePicker.MediaTypeOptions.Videos,
                   allowsEditing: true,
@@ -595,6 +665,29 @@ export default function ReportIncidentScreen() {
             text: 'Choose from Gallery',
             onPress: async () => {
     try {
+      // Request media library permissions first
+      const mediaLibraryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!mediaLibraryPermission.granted) {
+        Alert.alert(
+          'Permission Required',
+          'Media library permission is required to select videos. Please enable it in your device settings.',
+          [
+            { text: 'OK', style: 'cancel' },
+            {
+            text: 'Open Settings',
+            onPress: () => {
+              if (Platform.OS === 'ios') {
+                Linking.openURL('app-settings:');
+              } else {
+                Linking.openURL('app-settings:');
+              }
+            },
+            },
+          ]
+        );
+        return;
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Videos,
         allowsEditing: true,
@@ -716,6 +809,19 @@ export default function ReportIncidentScreen() {
 
       // Reset loading state and navigate
       setLoading(false);
+      
+      // Clear the form data after successful submission
+      setFormData({
+        incidentType: '',
+        location: null,
+        description: '',
+        images: [],
+        videos: [],
+        coordinates: null,
+        mediaUrls: [],
+      });
+      setLocationAddress('');
+      setNearestStation(null);
       
       // Navigate to tracking page with incident and station details
       console.log('Navigating to IncidentTracking with:', {

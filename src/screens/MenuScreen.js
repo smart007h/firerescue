@@ -84,6 +84,12 @@ const MenuScreen = ({ navigation }) => {
       onPress: () => handleMenuItemPress('UserReportHistory'),
       color: '#17A2B8',
     },
+    {
+      icon: 'document-text-outline',
+      title: 'Certificate Application',
+      onPress: () => handleMenuItemPress('CertificateApplication'),
+      color: '#28A745',
+    },
   ];
 
   return (
