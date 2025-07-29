@@ -475,7 +475,10 @@ contacts`}</Text>
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.gridItem, { backgroundColor: '#3949AB' }]}> 
+          <TouchableOpacity 
+            style={[styles.gridItem, { backgroundColor: '#3949AB' }]}
+            onPress={() => navigation.navigate('CertificateApplication')}
+          > 
             <View style={styles.gridItemContent}>
               <Ionicons name="document-text" size={32} color="#FFFFFF" />
               <Text style={styles.gridItemText}>{`Certificate

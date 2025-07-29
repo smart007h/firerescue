@@ -908,8 +908,8 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
               // Go back to the list view
               navigation.goBack();
             } else {
-              // If we're in the tab view, navigate to the list
-              navigation.navigate('Incidents');
+            // If we're in the tab view, navigate to the list
+            navigation.navigate('FirefighterIncidents');
             }
           }}
         >

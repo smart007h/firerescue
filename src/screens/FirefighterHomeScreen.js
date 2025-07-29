@@ -479,12 +479,12 @@ const FirefighterHomeScreen = ({ navigation }) => {
     // Always navigate to Incidents tab with 'all' filter
     navigation.reset({
       index: 0,
-      routes: [{ name: 'Incidents', params: { initialFilter: 'all' } }],
+      routes: [{ name: 'FirefighterIncidents', params: { initialFilter: 'all' } }],
     });
   };
 
   const handleViewDetails = (incident) => {
-    navigation.navigate('Incidents', { 
+    navigation.navigate('FirefighterIncidents', { 
       incidentId: incident.id,
       incidentData: incident
     });
@@ -679,6 +679,12 @@ const FirefighterHomeScreen = ({ navigation }) => {
               </Text>
           </View>
         </View>
+          <TouchableOpacity 
+            style={styles.profileButton}
+            onPress={() => navigation.navigate('FirefighterProfile')}
+          >
+            <Ionicons name="person-outline" size={24} color="#2D3748" />
+          </TouchableOpacity>
           <TouchableOpacity 
             style={styles.editButton}
             onPress={() => navigation.navigate('EditStation')}
@@ -1410,6 +1416,10 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  profileButton: {
+    padding: 4,
+    marginRight: 8,
   },
   editButton: {
     padding: 4,

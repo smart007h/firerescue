@@ -5,8 +5,9 @@ const { SafeAreaView } = require('react-native-safe-area-context');
 const { Ionicons } = require('@expo/vector-icons');
 const { supabase } = require('../config/supabaseClient');
 const { useNavigation } = require('@react-navigation/native');
-const AsyncStorage = require('@react-native-async-storage/async-storage');
 const { useAuth } = require('../context/AuthContext');
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 function FirefighterProfileScreen() {
   const [station, setStation] = useState(null);
@@ -45,14 +46,29 @@ function FirefighterProfileScreen() {
     try {
       // Get station data from AsyncStorage
       const stationData = await AsyncStorage.getItem('stationData');
+      console.log('Retrieved stationData from AsyncStorage:', stationData);
       if (!stationData) {
         console.log('No station data found in AsyncStorage');
         await handleSessionExpiration();
         return;
       }
 
-      const station = JSON.parse(stationData);
+      const parsedStationData = JSON.parse(stationData);
+      console.log('Parsed station data:', parsedStationData);
+      
+      // Ensure we have the right data structure
+      const station = {
+        station_id: parsedStationData.station_id || parsedStationData?.id,
+        station_name: parsedStationData.station_name || parsedStationData.name || 'Unknown Station',
+        station_region: parsedStationData.station_region || parsedStationData.region || 'Unknown Region',
+        station_email: parsedStationData.station_email || parsedStationData.email || 'No email',
+        station_contact: parsedStationData.station_contact || parsedStationData.phone || 'No contact',
+        station_address: parsedStationData.station_address || parsedStationData.address || 'No address',
+        is_active: parsedStationData.is_active !== undefined ? parsedStationData.is_active : true,
+      };
+      
       setStation(station);
+      console.log('Processed station object:', station);
 
       // Load stats for the station
       await loadStats(station.station_id);
@@ -63,25 +79,30 @@ function FirefighterProfileScreen() {
         .select('*')
         .eq('station_id', station.station_id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching incidents:', error);
+        throw error;
+      }
 
       // Calculate statistics
       const stats = {
-        totalIncidents: incidents.length,
-        activeIncidents: incidents.filter(i => i.status === 'pending' || i.status === 'in_progress').length,
-        completedIncidents: incidents.filter(i => i.status === 'resolved' || i.status === 'completed').length,
+        totalIncidents: incidents ? incidents.length : 0,
+        activeIncidents: incidents ? incidents.filter(i => i.status === 'pending' || i.status === 'in_progress').length : 0,
+        completedIncidents: incidents ? incidents.filter(i => i.status === 'resolved' || i.status === 'completed').length : 0,
       };
       setStats(stats);
 
       // Get recent incidents
       const recent = incidents
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-        .slice(0, 5);
+        ? incidents
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+            .slice(0, 5)
+        : [];
       setRecentIncidents(recent);
     } catch (error) {
       console.error('Error loading data:', error);
-      setError('Failed to load station information');
-      await handleSessionExpiration();
+      setError('Failed to load station information: ' + error.message);
+      // Don't automatically expire session on error, let user retry
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -296,16 +317,12 @@ function FirefighterProfileScreen() {
         </View>
 
         {/* Recent Incidents */}
-        <View style={styles.section}>
+        {/* <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent Incidents</Text>
-          {recentIncidents.map((incident) => (
+          {recentIncidents.map((incident,idx) => (
             <TouchableOpacity
-              key={incident.id}
+              key={idx}
               style={styles.incidentCard}
-              onPress={() => navigation.navigate('FirefighterIncidentDetails', { 
-                incidentId: incident.id,
-                fromList: true
-              })}
             >
               <View style={styles.incidentHeader}>
                 <Text style={styles.incidentType}>{incident.type}</Text>
@@ -329,7 +346,7 @@ function FirefighterProfileScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </View> */}
 
         {/* Logout Button */}
         <TouchableOpacity

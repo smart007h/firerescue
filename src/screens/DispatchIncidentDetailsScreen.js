@@ -2,7 +2,8 @@ const React = require('react');
 const { useState, useEffect } = React;
 const { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, RefreshControl, Image } = require('react-native');
 const { supabase } = require('../lib/supabase');
-const AsyncStorage = require('@react-native-async-storage/async-storage');
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
   const { incident, onStatusChange } = route.params;
