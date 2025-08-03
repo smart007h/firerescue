@@ -84,9 +84,6 @@ const RateServiceScreen = () => {
           <TouchableOpacity style={styles.submitButton} onPress={handleSubmit} disabled={submitting}>
             <Text style={styles.submitText}>{submitting ? 'Submitting...' : 'Submit Feedback'}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.skipButton} onPress={() => { setRating(0); setFeedback(''); }}>
-            <Text style={styles.skipText}>Skip</Text>
-          </TouchableOpacity>
           <Text style={styles.note}>Your feedback helps us improve our services and is confidential, used for quality improvement only.</Text>
         </View>
       </SafeAreaView>
@@ -182,19 +179,6 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   submitText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  skipButton: {
-    backgroundColor: '#ccc',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 10,
-  },
-  skipText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
