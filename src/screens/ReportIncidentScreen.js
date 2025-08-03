@@ -522,7 +522,7 @@ export default function ReportIncidentScreen() {
                 }
 
                 const cameraResult = await ImagePicker.launchCameraAsync({
-                  mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                  mediaTypes: 'images',
                   allowsEditing: true,
                   quality: 0.8,
                   base64: true
@@ -573,7 +573,7 @@ export default function ReportIncidentScreen() {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: 'images',
         allowsEditing: true,
         quality: 0.8,
         base64: true
@@ -640,7 +640,7 @@ export default function ReportIncidentScreen() {
                 }
 
                 const cameraResult = await ImagePicker.launchCameraAsync({
-                  mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+                  mediaTypes: 'videos',
                   allowsEditing: true,
                   quality: 1,
                 });
@@ -689,7 +689,7 @@ export default function ReportIncidentScreen() {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        mediaTypes: 'videos',
         allowsEditing: true,
         quality: 1,
       });

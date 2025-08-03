@@ -4,6 +4,7 @@ import { Text, Avatar, Button, Card, Divider, IconButton } from 'react-native-pa
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../config/supabaseClient';
+import { useFocusEffect } from '@react-navigation/native';
 
 const ProfileScreen = ({ navigation, route }) => {
   const [profile, setProfile] = useState(route.params?.profile || {});
@@ -13,6 +14,13 @@ const ProfileScreen = ({ navigation, route }) => {
   useEffect(() => {
     loadUserProfile();
   }, []);
+
+  // Reload profile when screen comes into focus (e.g., returning from EditProfile)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadUserProfile();
+    }, [])
+  );
 
   const loadUserProfile = async () => {
     try {
@@ -78,7 +86,23 @@ const ProfileScreen = ({ navigation, route }) => {
   const { signOut } = useAuth();
   const handleLogout = async () => {
     try {
-      await signOut();
+      Alert.alert(
+        'Confirm Logout',
+        'Are you sure you want to log out?',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Logout',
+            style: 'destructive',
+            onPress: async () => {
+              await signOut();
+            },
+          },
+        ]
+      );
     } catch (error) {
       console.error('Logout error:', error);
     }

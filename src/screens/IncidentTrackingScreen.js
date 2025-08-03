@@ -688,7 +688,17 @@ export default function IncidentTrackingScreen() {
         </View>
         <TouchableOpacity
           style={[styles.chatButton, !isIncidentParticipant && { opacity: 0.5 }]}
-          onPress={() => isIncidentParticipant && navigation.navigate('IncidentChat', { incidentId })}
+          onPress={() => {
+            if (!currentUser) {
+              Alert.alert('Not Logged In', 'Please log in to use the chat feature.');
+            } else if (!incident?.dispatcher_id) {
+              Alert.alert('Chat Not Available', 'Chat will be available once a dispatcher is assigned to this incident.');
+            } else if (!isIncidentParticipant) {
+              Alert.alert('Access Denied', 'Only the incident reporter and assigned dispatcher can participate in the chat.');
+            } else {
+              navigation.navigate('IncidentChat', { incidentId });
+            }
+          }}
           disabled={!isIncidentParticipant}
         >
           <IconComponent name="chatbubble-ellipses" size={24} color="#fff" />

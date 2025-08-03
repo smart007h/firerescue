@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, TextInput, ScrollView, TouchableOpacity, Image, Alert, Linking, Modal } from 'react-native';
-import { Text, IconButton, Card, Badge, Button } from 'react-native-paper';
+import { Text, IconButton, Card, Badge, Button, Avatar } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import MapView, { Marker } from 'react-native-maps';
@@ -19,6 +19,7 @@ const UserHomeScreen = () => {
   const navigation = useNavigation();
   const [nearbyStations, setNearbyStations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [locationLoading, setLocationLoading] = useState(false);
   const [userLocation, setUserLocation] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [nearestStation, setNearestStation] = useState(null);
@@ -40,6 +41,13 @@ const UserHomeScreen = () => {
     loadUserProfile();
     handleGetCurrentLocation();
   }, []);
+
+  // Reload profile when screen comes into focus (e.g., returning from EditProfile)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadUserProfile();
+    }, [])
+  );
 
   useEffect(() => {
     if (userLocation && userLocation.latitude && userLocation.longitude) {
@@ -101,19 +109,46 @@ const UserHomeScreen = () => {
   };
 
   // Filter among allNearbyStations, show up to 3 closest matches
-  const filteredStations = searchQuery
-    ? allNearbyStations.filter(station =>
-        (station.station_name && station.station_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (station.station_address && station.station_address.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (station.station_region && station.station_region.toLowerCase().includes(searchQuery.toLowerCase()))
-      ).slice(0, 3)
+  const filteredStations = searchQuery.trim()
+    ? allNearbyStations.filter(station => {
+        if (!station) return false;
+        
+        const searchTerm = searchQuery.toLowerCase().trim();
+        const nameMatch = station.station_name && station.station_name.toLowerCase().includes(searchTerm);
+        const addressMatch = station.station_address && station.station_address.toLowerCase().includes(searchTerm);
+        const regionMatch = station.station_region && station.station_region.toLowerCase().includes(searchTerm);
+        
+        return nameMatch || addressMatch || regionMatch;
+      }).slice(0, 3)
     : nearbyStations;
 
   const handleEmergencyCall = async () => {
     try {
+      // Check if location is currently being loaded
+      if (locationLoading) {
+        Alert.alert(
+          'Location Loading', 
+          'Your location is being determined. Please wait a moment and try again.',
+          [{ text: 'OK', style: 'default' }]
+        );
+        return;
+      }
+
       if (!userLocation) {
-        Alert.alert('Location Required', 'Please set your location first to find the nearest fire station.');
-        setShowLocationModal(true);
+        Alert.alert(
+          'Location Required', 
+          'Your location is needed to find the nearest fire station. Would you like to enable location access?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Enable Location', 
+              onPress: () => {
+                setShowLocationModal(true);
+                handleGetCurrentLocation();
+              }
+            }
+          ]
+        );
         return;
       }
 
@@ -123,17 +158,53 @@ const UserHomeScreen = () => {
       }
 
       // Create emergency call record
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError) {
+        console.error('Error getting current user:', userError);
+        Alert.alert('Authentication Error', 'Please log in again.');
+        return;
+      }
+
+      if (!user?.id) {
+        console.error('No authenticated user found');
+        Alert.alert('Authentication Error', 'User not authenticated. Please log in.');
+        return;
+      }
+
+      console.log('Creating emergency call for user:', user.id);
+      console.log('Nearest station data:', nearestStation);
+      
+      // Test the user's permissions first
+      const { data: testCall, error: testError } = await supabase
+        .from('emergency_calls')
+        .select('id')
+        .eq('caller_id', user.id)
+        .limit(1);
+      
+      if (testError) {
+        console.error('User may not have SELECT permissions:', testError);
+      } else {
+        console.log('User has SELECT permissions on emergency_calls');
+      }
+      
       const { data: emergencyCall, error: callError } = await supabase
         .from('emergency_calls')
         .insert({
           caller_id: user.id,
-          station_id: nearestStation.station_id,
+          station_id: nearestStation.id, // Use the firefighter's UUID from findNearestStation
           caller_location: `${userLocation.latitude},${userLocation.longitude}`,
           status: 'pending'
         })
         .select()
         .single();
+
+      if (callError) {
+        console.error('Emergency call database error:', callError);
+        throw callError;
+      }
+
+      console.log('Emergency call created successfully:', emergencyCall);
 
       if (callError) throw callError;
 
@@ -218,6 +289,7 @@ const UserHomeScreen = () => {
 
   const handleGetCurrentLocation = async () => {
     try {
+      setLocationLoading(true);
       const coords = await getCurrentLocation();
       
       if (!coords || typeof coords.latitude !== 'number' || typeof coords.longitude !== 'number') {
@@ -247,6 +319,8 @@ const UserHomeScreen = () => {
         'Location Error',
         error.message || 'Failed to get location. Please try again.'
       );
+    } finally {
+      setLocationLoading(false);
     }
   };
 
@@ -421,12 +495,24 @@ const UserHomeScreen = () => {
         <View style={styles.logoContainer}>
           <Text style={styles.logoText}>GHANA NATIONAL{'\n'}FIRE SERVICE</Text>
         </View>
-        <IconButton
-          icon="account-circle"
-          size={24}
+        <TouchableOpacity
           onPress={handleProfilePress}
           style={styles.profileButton}
-        />
+        >
+          {profile?.profile_image ? (
+            <Avatar.Image 
+              size={32} 
+              source={{ uri: profile.profile_image }}
+              style={styles.profileAvatar}
+            />
+          ) : (
+            <Avatar.Text 
+              size={32} 
+              label={profile?.full_name ? profile.full_name.charAt(0).toUpperCase() : '?'}
+              style={styles.profileAvatar}
+            />
+          )}
+        </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
@@ -616,6 +702,11 @@ const styles = StyleSheet.create({
   },
   profileButton: {
     margin: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileAvatar: {
+    backgroundColor: '#FF6B6B',
   },
   locationStatusContainer: {
     backgroundColor: '#fff',

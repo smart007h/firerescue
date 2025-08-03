@@ -81,6 +81,13 @@ const IncidentResponseScreen = ({ route, navigation }) => {
         <View style={styles.buttonContainer}>
           <Button
             mode="contained"
+            onPress={() => navigation.navigate('IncidentChat', { incidentId: incident.id })}
+            style={[styles.button, { marginBottom: 12 }]}
+          >
+            Open Chat
+          </Button>
+          <Button
+            mode="contained"
             onPress={() => navigation.goBack()}
             style={styles.button}
           >

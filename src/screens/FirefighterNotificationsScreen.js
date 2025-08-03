@@ -293,10 +293,26 @@ const FirefighterNotificationsScreen = () => {
 
   const loadStationCallLogs = async () => {
     try {
-      const { data, error } = await supabase
-        .from('call_logs')
-        .select('*')
+      // First get the firefighter record to get the UUID
+      const { data: firefighter, error: firefighterError } = await supabase
+        .from('firefighters')
+        .select('id')
         .eq('station_id', stationId)
+        .single();
+
+      if (firefighterError) {
+        console.error('Error getting firefighter record:', firefighterError);
+        throw firefighterError;
+      }
+
+      if (!firefighter) {
+        throw new Error('Firefighter station not found');
+      }
+
+      const { data, error } = await supabase
+        .from('emergency_calls')
+        .select('*')
+        .eq('station_id', firefighter.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;

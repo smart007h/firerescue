@@ -94,9 +94,9 @@ const UserNotificationsScreen = () => {
   const loadCallLogs = async () => {
     try {
       const { data, error } = await supabase
-        .from('call_logs')
+        .from('emergency_calls')
         .select('*')
-        .eq('user_id', userId)
+        .eq('caller_id', userId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;

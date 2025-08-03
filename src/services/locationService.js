@@ -125,7 +125,7 @@ export const findNearestStation = async (latitude, longitude) => {
   try {
     const { data: stations, error } = await supabase
       .from('firefighters')
-      .select('station_id, station_name, station_address, station_region, latitude, longitude, station_contact')
+      .select('id, station_id, station_name, station_address, station_region, latitude, longitude, station_contact')
       .eq('is_active', true);
 
     if (error) throw error;

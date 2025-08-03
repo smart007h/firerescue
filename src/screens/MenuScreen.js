@@ -7,6 +7,7 @@ import {
   Image,
   SafeAreaView,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../config/supabaseClient';
@@ -17,10 +18,26 @@ const MenuScreen = ({ navigation }) => {
 
   const handleSignOut = async () => {
     try {
-      console.log('[MenuScreen] Signing out...');
-      await signOut();
-      // Close drawer after signing out
-      navigation.closeDrawer();
+      Alert.alert(
+        'Confirm Logout',
+        'Are you sure you want to log out?',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Logout',
+            style: 'destructive',
+            onPress: async () => {
+              console.log('[MenuScreen] Signing out...');
+              await signOut();
+              // Close drawer after signing out
+              navigation.closeDrawer();
+            },
+          },
+        ]
+      );
     } catch (error) {
       console.error('[MenuScreen] Error signing out:', error.message);
     }

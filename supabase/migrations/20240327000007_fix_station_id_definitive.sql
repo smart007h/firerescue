@@ -30,8 +30,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Recreate triggers for other tables that were dropped
-CREATE TRIGGER update_call_logs_updated_at
-    BEFORE UPDATE ON call_logs
+CREATE TRIGGER update_emergency_calls_updated_at
+    BEFORE UPDATE ON emergency_calls
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 

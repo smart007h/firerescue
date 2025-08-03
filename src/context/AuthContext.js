@@ -222,6 +222,10 @@ export const AuthProvider = ({ children }) => {
       setUserRole(null);
       setLoading(false);
       console.log('[AuthContext] Setting loading false (signOut finally)');
+      // Reset the guard after a delay to allow for potential re-initialization
+      setTimeout(() => {
+        signOutCalledRef.current = false;
+      }, 1000);
     }
   };
 

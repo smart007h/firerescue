@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { supabase } from '../config/supabaseClient';
 
 const floorTypes = [
   "Ground Floor",
@@ -44,6 +45,7 @@ const CertificateApplicationScreen = () => {
   const [finalCost, setFinalCost] = useState(0);
   const [showSubmissionMessage, setShowSubmissionMessage] = useState(false);
   const [showFloorTypeModal, setShowFloorTypeModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const scrollViewRef = useRef(null);
 
   const handleNumberOfStoreysChange = (value) => {
@@ -148,12 +150,77 @@ const CertificateApplicationScreen = () => {
     setFinalCost(parseFloat(finalCost.toFixed(2)));
   };
 
-  const handleSubmitApplication = () => {
+  const handleSubmitApplication = async () => {
     if (reviewFee <= 0) {
       Alert.alert("Error", "Please calculate the cost first");
       return;
     }
-    setShowSubmissionMessage(true);
+
+    // Validate required fields
+    if (!name.trim() || !address.trim() || !location.trim() || !useOfPremises.trim()) {
+      Alert.alert("Error", "Please fill in all required fields");
+      return;
+    }
+
+    if (floors.length === 0) {
+      Alert.alert("Error", "Please add at least one floor");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+
+      // Get current authenticated user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError) {
+        console.error('Error getting user:', userError);
+        Alert.alert('Authentication Error', 'Please log in again.');
+        return;
+      }
+
+      if (!user?.id) {
+        Alert.alert('Authentication Error', 'User not authenticated. Please log in.');
+        return;
+      }
+
+      // Prepare application data
+      const applicationData = {
+        applicant_id: user.id,
+        applicant_name: name.trim(),
+        premises_address: address.trim(),
+        premises_location: location.trim(),
+        use_of_premises: useOfPremises.trim(),
+        number_of_storeys: parseInt(numberOfStoreys),
+        floors: floors, // Store as JSON
+        review_fee: parseFloat(reviewFee),
+        final_cost: parseFloat(finalCost),
+        status: 'pending'
+      };
+
+      console.log('Submitting certificate application:', applicationData);
+
+      // Insert into database
+      const { data: application, error: insertError } = await supabase
+        .from('certificate_applications')
+        .insert(applicationData)
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('Error submitting application:', insertError);
+        throw insertError;
+      }
+
+      console.log('Certificate application submitted successfully:', application);
+      setShowSubmissionMessage(true);
+
+    } catch (error) {
+      console.error('Application submission error:', error);
+      Alert.alert('Error', 'Failed to submit application. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const closeSubmissionMessage = () => {
@@ -369,10 +436,13 @@ const CertificateApplicationScreen = () => {
         )}
 
         <TouchableOpacity 
-          style={styles.submitButton} 
+          style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]} 
           onPress={handleSubmitApplication}
+          disabled={isSubmitting}
         >
-          <Text style={styles.submitButtonText}>Submit Application</Text>
+          <Text style={styles.submitButtonText}>
+            {isSubmitting ? 'Submitting...' : 'Submit Application'}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
       
@@ -416,7 +486,7 @@ const CertificateApplicationScreen = () => {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Application Submitted</Text>
             <Text style={styles.modalText}>
-              Your application has been successfully submitted.
+              Your certificate application has been successfully submitted to the database. You will receive updates on the status of your application.
             </Text>
             <TouchableOpacity 
               style={styles.downloadButton}
@@ -580,6 +650,10 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     alignItems: "center",
     marginTop: 20,
+  },
+  submitButtonDisabled: {
+    backgroundColor: "#ccc",
+    opacity: 0.6,
   },
   submitButtonText: {
     color: "white",

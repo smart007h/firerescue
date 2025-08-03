@@ -395,16 +395,26 @@ const FirefighterHomeScreen = ({ navigation }) => {
         return;
       }
 
+      // First get the firefighter record to get the UUID
+      const { data: firefighter, error: firefighterError } = await supabase
+        .from('firefighters')
+        .select('id')
+        .eq('station_id', stationId)
+        .single();
+
+      if (firefighterError) {
+        console.error('Error getting firefighter record:', firefighterError);
+        throw firefighterError;
+      }
+
+      if (!firefighter) {
+        throw new Error('Firefighter station not found');
+      }
+
       const { data: calls, error } = await supabase
         .from('emergency_calls')
-        .select(`
-          *,
-          profiles:caller_id (
-            full_name,
-            phone_number
-          )
-        `)
-        .eq('station_id', stationId)
+        .select('*')
+        .eq('station_id', firefighter.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -1087,7 +1097,7 @@ const FirefighterHomeScreen = ({ navigation }) => {
         <View style={styles.statsContainer}>
           <TouchableOpacity
             style={[styles.statCard, { backgroundColor: '#DC3545' }]}
-            onPress={() => navigation.navigate('Incidents', { initialFilter: 'in_progress' })}
+            onPress={() => navigation.navigate('FirefighterIncidents', { initialFilter: 'in_progress' })}
             activeOpacity={0.8}
           >
             <Card.Content>
@@ -1097,7 +1107,7 @@ const FirefighterHomeScreen = ({ navigation }) => {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.statCard, { backgroundColor: '#4CAF50' }]}
-            onPress={() => navigation.navigate('Incidents', { initialFilter: 'resolved', resolvedToday: true })}
+            onPress={() => navigation.navigate('FirefighterIncidents', { initialFilter: 'resolved', resolvedToday: true })}
             activeOpacity={0.8}
           >
             <Card.Content>
@@ -1116,7 +1126,7 @@ const FirefighterHomeScreen = ({ navigation }) => {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Incoming Incidents</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Incidents', { initialFilter: 'pending' })}>
+            <TouchableOpacity onPress={() => navigation.navigate('FirefighterIncidents', { initialFilter: 'pending' })}>
               <Text style={styles.viewAllText}>View All</Text>
             </TouchableOpacity>
           </View>
@@ -1134,7 +1144,7 @@ const FirefighterHomeScreen = ({ navigation }) => {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Active Emergencies</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Incidents', { initialFilter: 'in_progress' })}>
+            <TouchableOpacity onPress={() => navigation.navigate('FirefighterIncidents', { initialFilter: 'in_progress' })}>
               <Text style={styles.viewAllText}>View All</Text>
             </TouchableOpacity>
           </View>

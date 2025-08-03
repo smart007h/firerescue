@@ -4,7 +4,6 @@ import { Text, TextInput, Button, Avatar } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../config/supabaseClient';
-import { decode } from 'base64-js';
 
 const EditProfileScreen = ({ navigation, route }) => {
   const { profile } = route.params;
@@ -24,7 +23,7 @@ const EditProfileScreen = ({ navigation, route }) => {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: 'images',
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.5,
@@ -34,18 +33,31 @@ const EditProfileScreen = ({ navigation, route }) => {
       if (!result.canceled && result.assets[0].base64) {
         setLoading(true);
         const base64Image = result.assets[0].base64;
-        const fileName = `${profile.id}-${Date.now()}.jpeg`;
-        const filePath = `avatars/${fileName}`;
+        const fileName = `${Date.now()}.jpeg`;
+        const filePath = `${profile.id}/${fileName}`; // Use user ID as folder
 
         try {
+          // Convert base64 to Uint8Array for upload
+          const binary = atob(base64Image);
+          const array = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            array[i] = binary.charCodeAt(i);
+          }
+
           const { error: uploadError } = await supabase.storage
             .from('avatars')
-            .upload(filePath, decode(base64Image), {
+            .upload(filePath, array, {
               contentType: 'image/jpeg',
               upsert: true
             });
 
-          if (uploadError) throw uploadError;
+          if (uploadError) {
+            console.error('Upload error:', uploadError);
+            if (uploadError.message.includes('Bucket not found')) {
+              throw new Error('Storage bucket not configured. Please contact support.');
+            }
+            throw uploadError;
+          }
 
           const { data: { publicUrl } } = supabase.storage
             .from('avatars')
@@ -68,25 +80,40 @@ const EditProfileScreen = ({ navigation, route }) => {
   const handleSave = async () => {
     try {
       setLoading(true);
+      
+      console.log('Saving profile with data:', {
+        full_name: formData.full_name,
+        phone: formData.phone,
+        profile_image: formData.profile_image
+      });
+      
       const { error } = await supabase
         .from('profiles')
         .update({
           full_name: formData.full_name,
           phone: formData.phone,
+          profile_image: formData.profile_image,
           updated_at: new Date().toISOString()
         })
         .eq('id', profile.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Database update error:', error);
+        throw error;
+      }
+      
+      console.log('Profile updated successfully');
+      Alert.alert('Success', 'Profile updated successfully!');
       
       // Navigate back to Profile screen with updated data
       const updatedProfile = {
         ...profile,
         full_name: formData.full_name,
-        phone: formData.phone
+        phone: formData.phone,
+        profile_image: formData.profile_image // Include image in updated profile
       };
       
-      navigation.navigate('Profile', { profile: updatedProfile });
+      navigation.navigate('UserProfile', { profile: updatedProfile });
     } catch (error) {
       console.error('Error updating profile:', error);
       Alert.alert('Update Error', error.message || 'Failed to update profile. Please try again.');
