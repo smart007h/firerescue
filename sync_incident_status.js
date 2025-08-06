@@ -1,11 +1,11 @@
 const { createClient } = require('@supabase/supabase-js');
 
-// Initialize Supabase client with service role key for admin operations
-const supabaseUrl = 'https://lssxyhpwcvdzvnxabqwa.supabase.co';
-const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxzc3h5aHB3Y3Zkem5ueGFicXdhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNjc4NjE2MywiZXhwIjoyMDUyMzYyMTYzfQ.9x54-kK5-aN5UGfzE1-Xv5Z8b-kqI8FHjrKXCdYbw5A'; // You'll need the service role key for admin operations
+// Initialize Supabase client - USING ENVIRONMENT VARIABLES FOR SECURITY
+const supabaseUrl = process.env.SUPABASE_URL || 'YOUR_SUPABASE_URL';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'YOUR_SERVICE_ROLE_KEY';
 
 // For now, let's use the anon key and see what we can access
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxzc3h5aHB3Y3Zkem5ueGFicXdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzY3ODYxNjMsImV4cCI6MjA1MjM2MjE2M30.4EBHVkGKlY6CZrq8rqPvNZ1y9fqI_PXGPPcJD_XwO50';
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || 'YOUR_ANON_KEY';
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
