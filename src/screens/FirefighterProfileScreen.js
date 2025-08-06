@@ -6,6 +6,7 @@ const { Ionicons } = require('@expo/vector-icons');
 const { supabase } = require('../config/supabaseClient');
 const { useNavigation } = require('@react-navigation/native');
 const { useAuth } = require('../context/AuthContext');
+import { getAddressFromCoordinates } from '../services/locationService';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -94,9 +95,18 @@ function FirefighterProfileScreen() {
 
       // Get recent incidents
       const recent = incidents
-        ? incidents
+        ? await Promise.all(incidents
             .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
             .slice(0, 5)
+            .map(async (incident) => {
+              try {
+                const formattedLocation = await formatLocation(incident.location);
+                return { ...incident, formattedLocation };
+              } catch (error) {
+                return { ...incident, formattedLocation: incident.location };
+              }
+            })
+          )
         : [];
       setRecentIncidents(recent);
     } catch (error) {
@@ -145,9 +155,41 @@ function FirefighterProfileScreen() {
     }
   };
 
+  const formatLocation = async (location) => {
+    if (!location) return 'Location not available';
+    
+    // If location is already a readable address (contains letters), return it quickly
+    if (/[a-zA-Z]/.test(location) && !location.includes(',')) {
+      return location;
+    }
+    
+    try {
+      // Quick check for coordinate format
+      if (location.includes(',') && /^-?\d+\.?\d*\s*,\s*-?\d+\.?\d*$/.test(location.trim())) {
+        const coords = location.split(',').map(coord => parseFloat(coord.trim()));
+        const [lat, lng] = coords;
+        
+        if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          try {
+            const formattedAddress = await getAddressFromCoordinates(lat, lng);
+            return formattedAddress || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          } catch (error) {
+            return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          }
+        }
+      }
+      
+      return location;
+    } catch (error) {
+      return location;
+    }
+  };
+
   const handleLogout = async () => {
     try {
       await signOut();
+      console.log('Firefighter logged out successfully');
+      // Don't navigate manually - let AuthContext and AppNavigator handle it
     } catch (error) {
       console.error('Error logging out:', error);
       Alert.alert('Error', 'Failed to log out');
@@ -339,7 +381,7 @@ function FirefighterProfileScreen() {
               </View>
               <View style={styles.incidentDetails}>
                 <Ionicons name="location" size={16} color="#666" />
-                <Text style={styles.incidentLocation}>{incident.location}</Text>
+                <Text style={styles.incidentLocation}>{incident.formattedLocation || incident.location}</Text>
               </View>
               <Text style={styles.incidentDate}>
                 {new Date(incident.created_at).toLocaleDateString()}

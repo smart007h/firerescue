@@ -35,7 +35,7 @@ export const signIn = async (email, password) => {
       .from('profiles')
       .select('role')
       .eq('user_id', authData.user.id)
-      .single();
+      .maybeSingle();
 
     if (profileError) throw profileError;
 
@@ -71,7 +71,7 @@ export const getCurrentSession = async () => {
         .from('profiles')
         .select('role')
         .eq('user_id', session.user.id)
-        .single();
+        .maybeSingle();
 
       if (profileError) throw profileError;
       return { session: { ...session, role: profileData.role }, error: null };
@@ -94,7 +94,7 @@ export const getCurrentUser = async () => {
         .from('profiles')
         .select('role')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (profileError) throw profileError;
       return { user: { ...user, role: profileData.role }, error: null };
@@ -112,7 +112,7 @@ export const isFirefighter = async (userId) => {
       .from('profiles')
       .select('role')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
     return { isFirefighter: data.role === 'firefighter', error: null };

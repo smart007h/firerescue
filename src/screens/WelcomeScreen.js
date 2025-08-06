@@ -28,53 +28,81 @@ const slides = [
   },
 ];
 
-const WelcomeScreen = ({ navigation }) => {
+const WelcomeScreen = ({ navigation, route }) => {
   const [activeSlide, setActiveSlide] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [sessionChecked, setSessionChecked] = useState(false);
   const scrollViewRef = React.useRef(null);
+  const sessionCheckingRef = React.useRef(false); // Prevent multiple simultaneous calls
+  const initialRoleRef = React.useRef(null); // Track initial user role
   const { userRole, loading: authLoading } = useAuth();
 
+  // Check if we came from a logout action
+  const fromLogout = route?.params?.fromLogout || false;
+
+  // Detect logout scenario: if we had a role initially but now don't have one
+  const detectedLogout = React.useMemo(() => {
+    if (initialRoleRef.current === null) {
+      initialRoleRef.current = userRole;
+    }
+    // If we initially had a role but now don't (and it's not the first render), it's likely a logout
+    return initialRoleRef.current && !userRole && !authLoading;
+  }, [userRole, authLoading]);
+
+  const isFromLogout = fromLogout || detectedLogout;
+
+  // Early return if user already has a role and it's not from logout
+  // This prevents unnecessary session checking when AppNavigator should handle routing
+  if (!isFromLogout && userRole && !authLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Redirecting...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   useEffect(() => {
-    // Only check session if auth context is not loading
-    if (!authLoading && !sessionChecked) {
+    // If we came from logout or detected logout, don't check session - just show welcome screen
+    if (isFromLogout) {
+      console.log('[WelcomeScreen] Arrived from logout (detected or explicit), showing welcome screen');
+      setSessionChecked(true);
+      setIsLoading(false);
+      return;
+    }
+
+    // Only check session once when auth context is ready and session hasn't been checked yet
+    if (!authLoading && !sessionChecked && !sessionCheckingRef.current) {
+      console.log('[WelcomeScreen] Auth context ready, checking session once...');
       checkUserSession();
     }
-  }, [authLoading, sessionChecked]);
+  }, [authLoading, sessionChecked, isFromLogout]);
 
   // Handle navigation based on userRole from context
   useEffect(() => {
+    // Don't auto-navigate if we came from logout
+    if (isFromLogout) {
+      return;
+    }
+
+    // If user has a valid role, don't show welcome screen - let AppNavigator handle the routing
     if (!authLoading && sessionChecked && userRole) {
-      navigateBasedOnRole(userRole);
+      console.log('[WelcomeScreen] User has role:', userRole, 'letting AppNavigator handle routing');
+      // Don't navigate manually - let the AppNavigator switch stacks based on userRole
+      return;
     }
-  }, [userRole, authLoading, sessionChecked]);
+  }, [userRole, authLoading, sessionChecked, isFromLogout]);
 
-  const navigateBasedOnRole = (role) => {
-    console.log('[WelcomeScreen] Navigating based on role:', role);
-    
-    try {
-      switch (role) {
-        case 'dispatcher':
-          navigation.replace('DispatcherDashboard');
-          break;
-        case 'firefighter':
-          navigation.replace('FirefighterMain');
-          break;
-        case 'user':
-          // Navigate to the UserStack root, which will show UserMain by default
-          navigation.replace('UserMain');
-          break;
-        default:
-          navigation.replace('UserSelectionScreen');
-      }
-    } catch (error) {
-      console.error('[WelcomeScreen] Navigation error:', error);
-      navigation.replace('UserSelectionScreen');
+  const checkUserSession = useCallback(async () => {
+    // Prevent multiple simultaneous calls
+    if (sessionCheckingRef.current) {
+      console.log('[WelcomeScreen] Session check already in progress, skipping...');
+      return;
     }
-  };
 
-  const checkUserSession = async () => {
     try {
+      sessionCheckingRef.current = true;
       setIsLoading(true);
       console.log('[WelcomeScreen] Checking user session...');
       
@@ -105,20 +133,17 @@ const WelcomeScreen = ({ navigation }) => {
       setSessionChecked(true);
       setIsLoading(false);
       
-      // Small delay to prevent immediate navigation
-      setTimeout(() => {
-        if (!userRole) {
-          navigation.replace('UserSelectionScreen');
-        }
-      }, 1000);
+      // Don't navigate automatically - let the screen render naturally
+      console.log('[WelcomeScreen] No valid session, showing welcome screen');
 
     } catch (error) {
       console.error('[WelcomeScreen] Error checking user session:', error);
       setSessionChecked(true);
       setIsLoading(false);
-      navigation.replace('UserSelectionScreen');
+    } finally {
+      sessionCheckingRef.current = false;
     }
-  };
+  }, []);
 
   const handleScroll = useCallback((event) => {
     const slideSize = event.nativeEvent.layoutMeasurement.width;
@@ -129,7 +154,7 @@ const WelcomeScreen = ({ navigation }) => {
 
   const navigateToUserSelection = () => {
     try {
-      navigation.replace('UserSelectionScreen');
+      navigation.navigate('UserSelectionScreen');
     } catch (error) {
       console.error('[WelcomeScreen] Error navigating to UserSelectionScreen:', error);
       // Fallback navigation

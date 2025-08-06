@@ -27,7 +27,7 @@ export const AuthProvider = ({ children }) => {
             .select('*')
             .eq('id', dispatcherData.id)
             .eq('is_active', true)
-            .single();
+            .maybeSingle();
 
           if (!error && currentDispatcher) {
             // Create a user object that matches the expected format
@@ -207,12 +207,19 @@ export const AuthProvider = ({ children }) => {
     signOutCalledRef.current = true;
     console.log('[AuthContext] signOut called', { fromInit });
     try {
-      // Clear dispatcher data
+      // Clear all possible user data (dispatchers and regular users)
       await AsyncStorage.removeItem('dispatcherData');
+      await AsyncStorage.removeItem('stationData');
+      await AsyncStorage.removeItem('stationId');
       await AsyncStorage.removeItem('userRole');
       await AsyncStorage.removeItem('userId');
       await AsyncStorage.removeItem('userEmail');
+      await AsyncStorage.removeItem('userData');
+      await AsyncStorage.removeItem('supabase-session');
+      
+      // Sign out from Supabase
       await supabase.auth.signOut();
+      console.log('[AuthContext] Signed out from Supabase');
     } catch (error) {
       console.error('Error signing out:', error);
     } finally {
@@ -221,7 +228,8 @@ export const AuthProvider = ({ children }) => {
       setSession(null);
       setUserRole(null);
       setLoading(false);
-      console.log('[AuthContext] Setting loading false (signOut finally)');
+      console.log('[AuthContext] State cleared after signOut');
+      
       // Reset the guard after a delay to allow for potential re-initialization
       setTimeout(() => {
         signOutCalledRef.current = false;

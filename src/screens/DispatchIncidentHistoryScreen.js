@@ -2,6 +2,7 @@ const React = require('react');
 const { useState, useEffect } = React;
 const { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, RefreshControl } = require('react-native');
 const { supabase } = require('../config/supabaseClient');
+import { getAddressFromCoordinates } from '../services/locationService';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -9,7 +10,7 @@ const DispatchIncidentHistoryScreen = ({ navigation }) => {
   const [incidents, setIncidents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState('all'); // all, active, resolved
+  const [filter, setFilter] = useState('all'); // all, in_progress, resolved
 
   useEffect(() => {
     loadIncidents();
@@ -31,20 +32,67 @@ const DispatchIncidentHistoryScreen = ({ navigation }) => {
         .eq('dispatcher_id', dispatcherId)
         .order('created_at', { ascending: false });
 
-      if (filter !== 'all') {
-        query = query.eq('status', filter);
+      // Fix the filter logic
+      if (filter === 'active') {
+        query = query.eq('status', 'in_progress');
+      } else if (filter === 'resolved') {
+        query = query.eq('status', 'resolved');
       }
+      // For 'all', don't add any status filter
 
       const { data, error } = await query;
 
       if (error) throw error;
-      setIncidents(data || []);
+      
+      // Format locations for all incidents
+      const incidentsWithFormattedLocations = await Promise.all(
+        (data || []).map(async (incident) => {
+          try {
+            const formattedLocation = await formatLocation(incident.location);
+            return { ...incident, formattedLocation };
+          } catch (error) {
+            return { ...incident, formattedLocation: incident.location };
+          }
+        })
+      );
+      
+      setIncidents(incidentsWithFormattedLocations);
     } catch (error) {
       console.error('Error loading incidents:', error);
       Alert.alert('Error', 'Failed to load incident history');
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const formatLocation = async (location) => {
+    if (!location) return 'Location not available';
+    
+    // If location is already a readable address (contains letters), return it quickly
+    if (/[a-zA-Z]/.test(location) && !location.includes(',')) {
+      return location;
+    }
+    
+    try {
+      // Quick check for coordinate format
+      if (location.includes(',') && /^-?\d+\.?\d*\s*,\s*-?\d+\.?\d*$/.test(location.trim())) {
+        const coords = location.split(',').map(coord => parseFloat(coord.trim()));
+        const [lat, lng] = coords;
+        
+        if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          try {
+            const formattedAddress = await getAddressFromCoordinates(lat, lng);
+            return formattedAddress || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          } catch (error) {
+            return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          }
+        }
+      }
+      
+      return location;
+    } catch (error) {
+      return location;
     }
   };
 
@@ -72,12 +120,15 @@ const DispatchIncidentHistoryScreen = ({ navigation }) => {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'active':
-        return '#FF3B30';
+      case 'pending':
+        return '#FF9500'; // Orange for pending
       case 'in_progress':
-        return '#FF9500';
+        return '#007AFF'; // Blue for in progress (active)
       case 'resolved':
-        return '#34C759';
+      case 'completed':
+        return '#34C759'; // Green for resolved/completed
+      case 'cancelled':
+        return '#8E8E93'; // Gray for cancelled
       default:
         return '#8E8E93';
     }
@@ -169,7 +220,7 @@ const DispatchIncidentHistoryScreen = ({ navigation }) => {
               </View>
 
               <View style={styles.detailRow}>
-                <Text style={styles.detailText}>{incident.location}</Text>
+                <Text style={styles.detailText}>{incident.formattedLocation || incident.location}</Text>
               </View>
 
               <View style={styles.detailRow}>

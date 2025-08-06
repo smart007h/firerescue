@@ -16,13 +16,13 @@ export const signIn = async (identifier, password) => {
       .from('firefighters')
       .select('*')
       .eq('id', data.user.id)
-      .single();
+      .maybeSingle();
 
     const { data: { role } } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', data.user.id)
-      .single();
+      .maybeSingle();
 
     return { 
       data: { 
@@ -87,7 +87,7 @@ export const getCurrentUser = async () => {
       .from('profiles')
       .select('role')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
 
     return { data: { ...user, role: profile?.role }, error: null };
   } catch (error) {
@@ -101,7 +101,7 @@ export const getFirefighterDetails = async (userId) => {
       .from('firefighters')
       .select('*')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
     return { data, error: null };

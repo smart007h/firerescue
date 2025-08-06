@@ -12,7 +12,6 @@ import {
   Platform,
   PermissionsAndroid,
   Modal,
-  FlatList,
   Linking,
 } from 'react-native';
 import { supabase } from '../config/supabaseClient';
@@ -1022,13 +1021,13 @@ export default function ReportIncidentScreen() {
             <View style={styles.mediaContainer}>
       <View style={[styles.mediaButton, styles.imageUploadButton]}>
                 {formData.images.length > 0 ? (
-          <FlatList
-            data={formData.images}
+          <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            keyExtractor={(_, index) => `image-${index}`}
-            renderItem={({ item, index }) => (
-              <View style={styles.mediaPreviewItem}>
+            style={styles.mediaScrollView}
+          >
+            {formData.images.map((item, index) => (
+              <View key={`image-${index}`} style={styles.mediaPreviewItem}>
                 <Image source={{ uri: item.uri }} style={styles.mediaPreview} />
                         <TouchableOpacity
                           style={styles.removeMediaButton}
@@ -1037,8 +1036,8 @@ export default function ReportIncidentScreen() {
                           <Ionicons name="close-circle" size={16} color="#DC3545" />
                         </TouchableOpacity>
                       </View>
-            )}
-          />
+            ))}
+          </ScrollView>
         ) : (
           <TouchableOpacity
             style={styles.mediaButtonContent}
@@ -1053,13 +1052,13 @@ export default function ReportIncidentScreen() {
 
       <View style={[styles.mediaButton, styles.videoUploadButton]}>
                 {formData.videos.length > 0 ? (
-          <FlatList
-            data={formData.videos}
+          <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            keyExtractor={(_, index) => `video-${index}`}
-            renderItem={({ item, index }) => (
-              <View style={styles.mediaPreviewItem}>
+            style={styles.mediaScrollView}
+          >
+            {formData.videos.map((item, index) => (
+              <View key={`video-${index}`} style={styles.mediaPreviewItem}>
                         <View style={styles.videoPreview}>
                           <Ionicons name="play-circle" size={24} color="#fff" />
                         </View>
@@ -1070,8 +1069,8 @@ export default function ReportIncidentScreen() {
                           <Ionicons name="close-circle" size={16} color="#DC3545" />
                         </TouchableOpacity>
                       </View>
-            )}
-          />
+            ))}
+          </ScrollView>
         ) : (
           <TouchableOpacity
             style={styles.mediaButtonContent}
@@ -1362,16 +1361,16 @@ export default function ReportIncidentScreen() {
       </View>
 
       <View style={styles.content}>
-        <FlatList
-          data={renderFormContent()}
-          renderItem={({ item }) => item}
-          keyExtractor={(_, index) => `form-item-${index}`}
+        <ScrollView
           showsVerticalScrollIndicator={false}
-          removeClippedSubviews={true}
-          maxToRenderPerBatch={5}
-          windowSize={5}
-          initialNumToRender={4}
-        />
+          keyboardShouldPersistTaps="handled"
+        >
+          {renderFormContent().map((item, index) => (
+            <View key={`form-item-${index}`}>
+              {item}
+            </View>
+          ))}
+        </ScrollView>
       </View>
 
       <Modal
@@ -1750,6 +1749,9 @@ const styles = StyleSheet.create({
   mediaScrollView: {
     flex: 1,
     width: '100%',
+  },
+  mediaScrollView: {
+    flexDirection: 'row',
   },
   mediaPreviewItem: {
     width: 44,

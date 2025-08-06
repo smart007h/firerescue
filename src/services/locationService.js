@@ -1,7 +1,12 @@
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
+import Constants from 'expo-constants';
 
-const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+// Get the API key from Expo Constants or environment variables
+const GOOGLE_MAPS_API_KEY = Constants.expoConfig?.extra?.googleMapsApiKey || 
+                           Constants.manifest?.extra?.googleMapsApiKey ||
+                           process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
+                           'AIzaSyDecKTDi_jgxfzi6ZFuFL3SPXdfgcr26Ps'; // Fallback to the key from .env
 
 export const getCurrentLocation = async () => {
   try {
@@ -49,29 +54,47 @@ export const getCurrentLocation = async () => {
 
 export const getAddressFromCoordinates = async (latitude, longitude) => {
   try {
+    console.log(`Getting address for coordinates: ${latitude}, ${longitude}`);
+    
+    // Validate coordinates
+    if (typeof latitude !== 'number' || typeof longitude !== 'number' || 
+        isNaN(latitude) || isNaN(longitude)) {
+      throw new Error('Invalid coordinates provided');
+    }
+    
     // Request permissions before reverse geocoding
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
-      throw new Error('Location permission denied');
+      console.warn('Location permission denied, falling back to coordinates display');
+      return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
     }
-    const [address] = await Location.reverseGeocodeAsync({
-      latitude,
-      longitude,
-    });
+    
+    try {
+      const [address] = await Location.reverseGeocodeAsync({
+        latitude,
+        longitude,
+      });
 
-    if (address) {
-      return [
-        address.street,
-        address.city,
-        address.region,
-        address.country
-      ].filter(Boolean).join(', ');
+      if (address) {
+        const formattedAddress = [
+          address.street,
+          address.city,
+          address.region,
+          address.country
+        ].filter(Boolean).join(', ');
+        
+        console.log(`Address found: ${formattedAddress}`);
+        return formattedAddress || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+      }
+    } catch (reverseGeocodeError) {
+      console.warn('Reverse geocoding failed:', reverseGeocodeError.message);
     }
 
-    return 'Location not available';
+    // Fallback to coordinate display
+    return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
   } catch (error) {
     console.error('Error getting address from coordinates:', error);
-    return 'Location not available';
+    return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
   }
 };
 

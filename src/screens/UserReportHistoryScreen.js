@@ -26,6 +26,54 @@ const UserReportHistoryScreen = () => {
   useEffect(() => {
     loadReports();
     getStations().then(({ data }) => setStations(data || []));
+    
+    // Set up real-time subscription for incident updates
+    const setupRealtimeSubscription = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (user) {
+          // Subscribe to changes in incidents reported by this user
+          const subscription = supabase
+            .channel('user_incidents')
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'incidents',
+                filter: `reported_by=eq.${user.id}`
+              },
+              (payload) => {
+                console.log('Real-time incident update:', payload);
+                // Reload reports when any incident changes
+                loadReports();
+              }
+            )
+            .subscribe();
+
+          // Cleanup function
+          return () => {
+            subscription.unsubscribe();
+          };
+        }
+      } catch (error) {
+        console.error('Error setting up real-time subscription:', error);
+      }
+    };
+
+    const cleanup = setupRealtimeSubscription();
+    
+    // Cleanup on unmount
+    return () => {
+      if (cleanup && typeof cleanup.then === 'function') {
+        cleanup.then(unsubscribe => {
+          if (typeof unsubscribe === 'function') {
+            unsubscribe();
+          }
+        });
+      }
+    };
   }, []);
 
   const getAddressFromCoordinates = async (latitude, longitude) => {
@@ -77,6 +125,8 @@ const UserReportHistoryScreen = () => {
         throw new Error('No authenticated user found');
       }
 
+      console.log('Loading reports for user:', user.id);
+
       const { data, error } = await supabase
         .from('incidents')
         .select('*')
@@ -88,7 +138,14 @@ const UserReportHistoryScreen = () => {
         throw error;
       }
 
-      console.log('Fetched reports:', data); // Add this line for debugging
+      console.log('Fetched reports from database:', data?.length || 0);
+      console.log('Reports data:', data?.map(r => ({ 
+        id: r.id, 
+        status: r.status, 
+        dispatcher_id: r.dispatcher_id,
+        created_at: r.created_at,
+        updated_at: r.updated_at 
+      })));
 
       // Process each report to get location addresses
       const reportsWithAddresses = await Promise.all(
@@ -113,7 +170,7 @@ const UserReportHistoryScreen = () => {
         })
       );
 
-      console.log('Processed reports:', reportsWithAddresses); // Add this line for debugging
+      console.log('Processed reports with addresses:', reportsWithAddresses?.length || 0);
       setReports(reportsWithAddresses || []);
     } catch (error) {
       console.error('Error loading reports:', error);
@@ -135,13 +192,15 @@ const UserReportHistoryScreen = () => {
       case 'pending':
         return '#FFA500'; // Orange for pending
       case 'in_progress':
-        return '#4CAF50'; // Green for in progress
+        return '#007AFF'; // Blue for in progress
+      case 'resolved':
+      case 'completed':
+        return '#34C759'; // Green for resolved/completed
       case 'approved':
         return '#2196F3'; // Blue for approved
       case 'rejected':
-        return '#F44336'; // Red for rejected
-      case 'completed':
-        return '#9C27B0'; // Purple for completed
+      case 'cancelled':
+        return '#F44336'; // Red for rejected/cancelled
       default:
         return '#f3f4f6'; // Light gray for unknown status
     }
@@ -192,56 +251,143 @@ const UserReportHistoryScreen = () => {
   };
 
   const renderReportItem = ({ item }) => (
-    <TouchableOpacity
-      onPress={() => {
-        navigation.navigate('IncidentDetails', { 
-          incident: item
-        });
-      }}
-    >
+    <View>
       <Card style={styles.reportCard}>
         <Card.Content>
-          <View style={styles.reportHeader}>
-            <View style={styles.reportTypeContainer}>
-              <Ionicons 
-                name={getIncidentIcon(item.incident_type)} 
-                size={24} 
-                color="#DC3545" 
-              />
-              <Text style={styles.reportType}>
-                {item.incident_type ? item.incident_type.charAt(0).toUpperCase() + item.incident_type.slice(1) : 'Unknown Type'}
-              </Text>
+          <TouchableOpacity
+            onPress={() => {
+              // Toggle expanded state to show/hide action buttons
+              setExpandedDescriptions(prev => ({
+                ...prev,
+                [item.id]: !prev[item.id]
+              }));
+            }}
+          >
+            <View style={styles.reportHeader}>
+              <View style={styles.reportTypeContainer}>
+                <Ionicons 
+                  name={getIncidentIcon(item.incident_type)} 
+                  size={24} 
+                  color="#DC3545" 
+                />
+                <Text style={styles.reportType}>
+                  {item.incident_type ? item.incident_type.charAt(0).toUpperCase() + item.incident_type.slice(1) : 'Unknown Type'}
+                </Text>
+              </View>
+              <View style={[
+                styles.statusBadge,
+                { backgroundColor: getStatusColor(item.status || 'pending') }
+              ]}>
+                <Text style={styles.statusText}>
+                  {(item.status || 'pending').charAt(0).toUpperCase() + (item.status || 'pending').slice(1)}
+                </Text>
+              </View>
             </View>
-            <View style={[
-              styles.statusBadge,
-              { backgroundColor: getStatusColor(item.status || 'pending') }
-            ]}>
-              <Text style={styles.statusText}>
-                {(item.status || 'pending').charAt(0).toUpperCase() + (item.status || 'pending').slice(1)}
-              </Text>
-            </View>
-          </View>
 
-          <View style={styles.reportDetails}>
-            <View style={styles.detailRow}>
-              <Ionicons name="location-outline" size={20} color="#666" />
-              <Text style={styles.detailText} numberOfLines={2}>
-                {item.location_address || 'Location not available'}
-              </Text>
+            <View style={styles.reportDetails}>
+              <View style={styles.detailRow}>
+                <Ionicons name="location-outline" size={20} color="#666" />
+                <Text style={styles.detailText} numberOfLines={2}>
+                  {item.location_address || 'Location not available'}
+                </Text>
+              </View>
+
+              <View style={styles.detailRow}>
+                <Ionicons name="time-outline" size={20} color="#666" />
+                <Text style={styles.detailText}>
+                  {new Date(item.created_at).toLocaleString()}
+                </Text>
+              </View>
             </View>
 
-            <View style={styles.detailRow}>
-              <Ionicons name="time-outline" size={20} color="#666" />
-              <Text style={styles.detailText}>
-                {new Date(item.created_at).toLocaleString()}
-              </Text>
-            </View>
-          </View>
+            {renderDescription(item.description || 'No description provided', item.id)}
+          </TouchableOpacity>
 
-          {renderDescription(item.description || 'No description provided', item.id)}
+          {/* Action Buttons - Show when expanded */}
+          {expandedDescriptions[item.id] && (
+            <View style={styles.actionButtonsContainer}>
+              {/* Dispatcher Info */}
+              {item.dispatcher_id ? (
+                <View style={styles.dispatcherInfo}>
+                  <Ionicons name="person-circle" size={20} color="#4CAF50" />
+                  <Text style={styles.dispatcherText}>Dispatcher Assigned</Text>
+                </View>
+              ) : (
+                <View style={styles.dispatcherInfo}>
+                  <Ionicons name="time-outline" size={20} color="#FF9500" />
+                  <Text style={styles.waitingText}>Waiting for assignment</Text>
+                </View>
+              )}
+
+              {/* Action Buttons Row */}
+              <View style={styles.actionButtons}>
+                {/* Chat Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.actionButton,
+                    styles.chatButton,
+                    !item.dispatcher_id && styles.disabledButton
+                  ]}
+                  onPress={() => {
+                    if (item.dispatcher_id) {
+                      navigation.navigate('IncidentChat', { 
+                        incidentId: item.id,
+                        returnTo: 'UserReportHistory'
+                      });
+                    } else {
+                      Alert.alert('Chat Not Available', 'Chat will be available once a dispatcher is assigned to this incident.');
+                    }
+                  }}
+                  disabled={!item.dispatcher_id}
+                >
+                  <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
+                  <Text style={styles.actionButtonText}>Chat</Text>
+                </TouchableOpacity>
+
+                {/* Track Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.actionButton,
+                    styles.trackButton,
+                    !item.dispatcher_id && styles.disabledButton
+                  ]}
+                  onPress={() => {
+                    if (item.dispatcher_id) {
+                      navigation.navigate('CivilianTrackingScreen', { 
+                        incidentId: item.id,
+                        incident: item,
+                        returnTo: 'UserReportHistory'
+                      });
+                    } else {
+                      Alert.alert('Tracking Not Available', 'Tracking will be available once a dispatcher is assigned to this incident.');
+                    }
+                  }}
+                  disabled={!item.dispatcher_id}
+                >
+                  <Ionicons name="location" size={20} color="#fff" />
+                  <Text style={styles.actionButtonText}>Track</Text>
+                </TouchableOpacity>
+
+                {/* Details Button */}
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.detailsButton]}
+                  onPress={() => {
+                    navigation.navigate('CivilianIncidentDetails', { 
+                      incident: item,
+                      incidentId: item.id,
+                      returnTo: 'UserReportHistory'
+                    });
+                  }}
+                >
+                  <Ionicons name="information-circle" size={20} color="#fff" />
+                  <Text style={styles.actionButtonText}>Details</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </Card.Content>
       </Card>
-    </TouchableOpacity>
+    </View>
   );
 
   // Extract unique statuses from reports
@@ -475,6 +621,65 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
     marginTop: 16,
+  },
+  actionButtonsContainer: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  dispatcherInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    padding: 8,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+  },
+  dispatcherText: {
+    fontSize: 14,
+    color: '#4CAF50',
+    marginLeft: 8,
+    fontWeight: '500',
+  },
+  waitingText: {
+    fontSize: 14,
+    color: '#FF9500',
+    marginLeft: 8,
+    fontWeight: '500',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 6,
+  },
+  chatButton: {
+    backgroundColor: '#2563eb',
+  },
+  trackButton: {
+    backgroundColor: '#16a34a',
+  },
+  detailsButton: {
+    backgroundColor: '#dc2626',
+  },
+  disabledButton: {
+    backgroundColor: '#9ca3af',
+    opacity: 0.6,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 

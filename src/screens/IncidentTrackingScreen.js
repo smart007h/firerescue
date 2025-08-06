@@ -76,36 +76,15 @@ export default function IncidentTrackingScreen() {
   }, [incidentId]);
 
   useEffect(() => {
-    if (incident?.dispatcher_id && incidentLocation) {
-      const fetchDispatcherLocation = async () => {
-        const { data, error } = await supabase
-          .from('dispatcher_locations')
-          .select('latitude, longitude')
-          .eq('dispatcher_id', incident.dispatcher_id)
-          .single();
-        if (data) setDispatcherLocation({ latitude: data.latitude, longitude: data.longitude });
-      };
-      fetchDispatcherLocation();
-    }
+    // SECURITY: Civilians should NOT see exact dispatcher locations
+    // They can only see their incident location and status updates
+    console.log('Civilian tracking screen - dispatcher location access restricted');
   }, [incident, incidentLocation]);
 
   useEffect(() => {
-    const fetchRoute = async () => {
-      if (dispatcherLocation && incidentLocation) {
-        const apiKey = '<YOUR_GOOGLE_MAPS_API_KEY>';
-        const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${dispatcherLocation.latitude},${dispatcherLocation.longitude}&destination=${incidentLocation.latitude},${incidentLocation.longitude}&key=${apiKey}`;
-        const response = await fetch(url);
-        const data = await response.json();
-        if (data.routes && data.routes.length) {
-          const points = decodePolyline(data.routes[0].overview_polyline.points);
-          setRouteCoordinates(points);
-          // Extract ETA
-          const etaText = data.routes[0].legs[0]?.duration?.text;
-          setEta(etaText || null);
-        }
-      }
-    };
-    fetchRoute();
+    // SECURITY: Civilians should not see dispatcher routes
+    // They only need to know their incident status, not real-time dispatcher movement
+    console.log('Route tracking disabled for civilian users - security restriction');
   }, [dispatcherLocation, incidentLocation]);
 
   useEffect(() => {
@@ -299,38 +278,76 @@ export default function IncidentTrackingScreen() {
         return;
       }
 
+      // SECURITY CHECK: Verify user can access this incident
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        setError('Authentication required');
+        navigation.navigate('Welcome');
+        return;
+      }
+
+      // Civilians can only view incidents they reported
+      if (incidentData.reported_by !== user.id) {
+        setError('You can only view incidents you reported');
+        navigation.goBack();
+        return;
+      }
+
+      console.log('User authorized to view incident:', incidentData.id);
+
       // If we have a station_id, fetch the station details separately
       if (incidentData.station_id) {
         try {
+          console.log('Loading station information for station_id:', incidentData.station_id);
           const { data: stationData, error: stationError } = await supabase
             .from('firefighters')
-            .select('station_id, station_name, station_address')
+            .select('station_id, station_name, station_address, station_contact, station_region')
             .eq('station_id', incidentData.station_id)
-            .single();
+            .maybeSingle(); // Use maybeSingle to avoid errors when no record exists
           
-          if (!stationError && stationData) {
+          if (stationError) {
+            console.error('Error fetching station details:', stationError);
+          } else if (stationData) {
+            console.log('Station data loaded:', stationData);
             incidentData.station = stationData;
+          } else {
+            console.log('No station found for station_id:', incidentData.station_id);
           }
         } catch (stationError) {
-          console.error('Error fetching station details:', stationError);
+          console.error('Exception while fetching station details:', stationError);
           // Continue without station details
         }
+      } else {
+        console.log('No station_id found in incident data');
       }
 
       setIncident(incidentData);
 
       // Parse incident location and get address
-      if (incidentData.location) {
+      let lat, lng;
+      
+      // Try to get coordinates from separate latitude/longitude fields first
+      if (incidentData.latitude && incidentData.longitude) {
+        lat = parseFloat(incidentData.latitude);
+        lng = parseFloat(incidentData.longitude);
+      } 
+      // Fallback to parsing from location field (comma-separated)
+      else if (incidentData.location && incidentData.location.includes(',')) {
         try {
-          const [lat, lng] = incidentData.location.split(',').map(Number);
-          if (!isNaN(lat) && !isNaN(lng)) {
-            setIncidentLocation({ latitude: lat, longitude: lng });
-            await getAddressFromCoordinates(lat, lng);
-          }
+          const [latStr, lngStr] = incidentData.location.split(',');
+          lat = parseFloat(latStr.trim());
+          lng = parseFloat(lngStr.trim());
         } catch (locationError) {
-          console.error('Error parsing location:', locationError);
-          setLocationAddress('Location not available');
+          console.error('Error parsing location string:', locationError);
         }
+      }
+      
+      // Set location if we have valid coordinates
+      if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+        setIncidentLocation({ latitude: lat, longitude: lng });
+        await getAddressFromCoordinates(lat, lng);
+      } else {
+        setLocationAddress('Location not available');
       }
 
       // Load chat messages
@@ -674,7 +691,7 @@ export default function IncidentTrackingScreen() {
           />
         </TouchableOpacity>
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Incident Tracking</Text>
+          <Text style={styles.headerTitle}>My Incident Status</Text>
           <View style={styles.statusContainer}>
             <View style={[
               styles.statusBadge,
@@ -720,8 +737,8 @@ export default function IncidentTrackingScreen() {
                 provider={PROVIDER_GOOGLE}
                 style={styles.map}
                 initialRegion={{
-                  latitude: incidentLocation?.latitude || 0,
-                  longitude: incidentLocation?.longitude || 0,
+                  latitude: incidentLocation?.latitude || 5.6037,
+                  longitude: incidentLocation?.longitude || -0.1870,
                   latitudeDelta: 0.0922,
                   longitudeDelta: 0.0421,
                 }}
@@ -734,22 +751,8 @@ export default function IncidentTrackingScreen() {
                     pinColor="red"
                   />
                 )}
-                {/* Dispatcher Marker as Car Icon */}
-                {dispatcherLocation && (
-                  <Marker
-                    coordinate={dispatcherLocation}
-                    title="Dispatcher"
-                    image={carIcon}
-                  />
-                )}
-                {/* Route Polyline */}
-                {routeCoordinates.length > 0 && (
-                  <Polyline
-                    coordinates={routeCoordinates}
-                    strokeColor="#FF3B30"
-                    strokeWidth={8}
-                  />
-                )}
+                {/* SECURITY: Dispatcher location hidden from civilians */}
+                {/* Route Polyline - SECURITY: Disabled for civilians */}
               </MapView>
             )
           ) : (
@@ -773,6 +776,14 @@ export default function IncidentTrackingScreen() {
             <Text style={styles.cardTitle}>{incident?.incident_type}</Text>
           </View>
 
+          {/* Civilian Information Note */}
+          <View style={styles.infoNote}>
+            <IconComponent name="information-circle-outline" size={20} color="#007AFF" />
+            <Text style={styles.infoText}>
+              You can track your incident status and chat with the assigned dispatcher when available.
+            </Text>
+          </View>
+
           <View style={styles.detailRow}>
             <IconComponent name="time-outline" size={20} color="#666" />
             <Text style={styles.detailText}>
@@ -786,23 +797,56 @@ export default function IncidentTrackingScreen() {
           </View>
 
           {/* Station Information */}
-          {incident.station && (
-          <View style={styles.stationCard}>
-            <View style={styles.cardHeader}>
-              <IconComponent name="business" size={24} color="#DC3545" />
-              <Text style={styles.cardTitle}>Assigned Station</Text>
-            </View>
-            <View style={styles.stationContent}>
+          {incident.station ? (
+            <View style={styles.stationCard}>
+              <View style={styles.cardHeader}>
+                <IconComponent name="business" size={24} color="#DC3545" />
+                <Text style={styles.cardTitle}>Assigned Fire Station</Text>
+              </View>
+              <View style={styles.stationContent}>
                 <Text style={styles.stationName}>{incident.station.station_name}</Text>
-                <Text style={styles.stationAddress}>{incident.station.station_address}</Text>
-              <View style={styles.stationStatus}>
-                <IconComponent name="time" size={16} color="#666" />
-                <Text style={styles.stationStatusText}>
-                  Estimated arrival time: 10-15 minutes
+                <Text style={styles.stationId}>Station ID: {incident.station.station_id}</Text>
+                
+                <View style={styles.detailRow}>
+                  <IconComponent name="location-outline" size={20} color="#666" />
+                  <Text style={styles.stationAddress}>{incident.station.station_address}</Text>
+                </View>
+                
+                {incident.station.station_contact && (
+                  <View style={styles.detailRow}>
+                    <IconComponent name="call-outline" size={20} color="#666" />
+                    <Text style={styles.stationContact}>{incident.station.station_contact}</Text>
+                  </View>
+                )}
+                
+                {incident.station.station_region && (
+                  <View style={styles.detailRow}>
+                    <IconComponent name="map-outline" size={20} color="#666" />
+                    <Text style={styles.stationRegion}>{incident.station.station_region}</Text>
+                  </View>
+                )}
+
+                <View style={styles.stationStatus}>
+                  <IconComponent name="time" size={16} color="#4CAF50" />
+                  <Text style={styles.stationStatusText}>
+                    Station assigned - Response team dispatched
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : incident.status !== 'pending' && (
+            <View style={styles.stationCard}>
+              <View style={styles.cardHeader}>
+                <IconComponent name="time-outline" size={24} color="#FF9500" />
+                <Text style={styles.cardTitle}>Station Assignment</Text>
+              </View>
+              <View style={styles.stationContent}>
+                <Text style={styles.waitingText}>Waiting for station assignment...</Text>
+                <Text style={styles.waitingSubtext}>
+                  A fire station will be assigned to your incident shortly.
                 </Text>
               </View>
             </View>
-          </View>
           )}
 
           <View style={styles.descriptionContainer}>
@@ -1074,23 +1118,56 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 4,
   },
+  stationId: {
+    fontSize: 14,
+    color: '#007AFF',
+    fontWeight: '500',
+    marginBottom: 12,
+  },
   stationAddress: {
     fontSize: 14,
     color: '#666',
+    marginLeft: 8,
+    flex: 1,
+  },
+  stationContact: {
+    fontSize: 14,
+    color: '#007AFF',
+    marginLeft: 8,
+    flex: 1,
+  },
+  stationRegion: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 8,
+    flex: 1,
+  },
+  waitingText: {
+    fontSize: 16,
+    color: '#FF9500',
+    fontWeight: '500',
     marginBottom: 8,
+  },
+  waitingSubtext: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 18,
   },
   stationStatus: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
-    backgroundColor: '#fff',
-    padding: 8,
-    borderRadius: 6,
+    marginTop: 12,
+    backgroundColor: '#E8F5E8',
+    padding: 12,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50',
   },
   stationStatusText: {
     fontSize: 14,
-    color: '#666',
+    color: '#2E7D32',
     marginLeft: 8,
+    fontWeight: '500',
   },
   mediaCard: {
     backgroundColor: '#fff',
@@ -1102,6 +1179,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  infoNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E3F2FD',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#007AFF',
+    marginLeft: 8,
+    flex: 1,
+    lineHeight: 18,
   },
   mediaItem: {
     marginRight: 12,

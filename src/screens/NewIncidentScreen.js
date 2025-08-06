@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import { TextInput, Button } from 'react-native-paper';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../config/supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -21,6 +22,66 @@ const NewIncidentScreen = ({ navigation }) => {
     priority: 'medium',
     status: 'active',
   });
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const debounceTimeoutRef = useRef(null);
+
+  // Simple debounce function
+  const debounce = (func, delay) => {
+    return (...args) => {
+      clearTimeout(debounceTimeoutRef.current);
+      debounceTimeoutRef.current = setTimeout(() => func.apply(this, args), delay);
+    };
+  };
+
+  // Function to fetch Google Places suggestions
+  const fetchLocationSuggestions = async (input) => {
+    if (!input || input.length < 3) {
+      setLocationSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    try {
+      const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+      if (!apiKey) {
+        console.warn('Google Maps API key not found');
+        return;
+      }
+      
+      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${apiKey}&components=country:gh&types=geocode`;
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (data.status === 'OK' && data.predictions) {
+        setLocationSuggestions(data.predictions.slice(0, 5));
+        setShowSuggestions(true);
+      } else {
+        setLocationSuggestions([]);
+        setShowSuggestions(false);
+      }
+    } catch (error) {
+      console.error('Error fetching location suggestions:', error);
+      setLocationSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
+  // Debounced version of the fetch function
+  const debouncedFetchSuggestions = useCallback(
+    debounce(fetchLocationSuggestions, 400),
+    []
+  );
+
+  const handleLocationChange = (text) => {
+    setFormData({ ...formData, location: text });
+    debouncedFetchSuggestions(text);
+  };
+
+  const handleSuggestionSelect = (suggestion) => {
+    setFormData({ ...formData, location: suggestion.description });
+    setLocationSuggestions([]);
+    setShowSuggestions(false);
+  };
 
   const handleSubmit = async () => {
     if (!formData.type || !formData.location || !formData.description) {
@@ -103,13 +164,40 @@ const NewIncidentScreen = ({ navigation }) => {
           style={styles.input}
         />
 
-        <TextInput
-          label="Location *"
-          value={formData.location}
-          onChangeText={(text) => setFormData({ ...formData, location: text })}
-          mode="outlined"
-          style={styles.input}
-        />
+        <View style={styles.locationContainer}>
+          <TextInput
+            label="Location *"
+            value={formData.location}
+            onChangeText={handleLocationChange}
+            mode="outlined"
+            style={styles.input}
+            placeholder="Start typing an address or location..."
+          />
+          
+          {showSuggestions && locationSuggestions.length > 0 && (
+            <View style={styles.suggestionsContainer}>
+              {locationSuggestions.map((item) => (
+                <TouchableOpacity
+                  key={item.place_id}
+                  style={styles.suggestionItem}
+                  onPress={() => handleSuggestionSelect(item)}
+                >
+                  <Ionicons name="location-outline" size={20} color="#666" style={styles.suggestionIcon} />
+                  <View style={styles.suggestionTextContainer}>
+                    <Text style={styles.suggestionMainText}>
+                      {item.structured_formatting.main_text}
+                    </Text>
+                    {item.structured_formatting.secondary_text && (
+                      <Text style={styles.suggestionSecondaryText}>
+                        {item.structured_formatting.secondary_text}
+                      </Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
 
         <TextInput
           label="Description *"
@@ -217,6 +305,51 @@ const styles = StyleSheet.create({
   input: {
     marginBottom: 16,
     backgroundColor: '#FFFFFF',
+  },
+  locationContainer: {
+    position: 'relative',
+    zIndex: 1000,
+  },
+  suggestionsContainer: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    maxHeight: 200,
+    zIndex: 1001,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F2F2F7',
+  },
+  suggestionIcon: {
+    marginRight: 12,
+  },
+  suggestionTextContainer: {
+    flex: 1,
+  },
+  suggestionMainText: {
+    fontSize: 16,
+    color: '#000000',
+    fontWeight: '500',
+  },
+  suggestionSecondaryText: {
+    fontSize: 14,
+    color: '#666666',
+    marginTop: 2,
   },
   priorityContainer: {
     marginBottom: 24,

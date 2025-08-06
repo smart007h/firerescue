@@ -117,10 +117,10 @@ const FirefighterNotificationsScreen = () => {
           supabase.auth.signOut()
         ]);
 
-        // Navigate to login
+        // Navigate to welcome screen instead of login selection
         navigation.reset({
           index: 0,
-          routes: [{ name: 'LoginSelection' }]
+          routes: [{ name: 'Welcome', params: { fromLogout: true } }]
         });
       } else {
         // If we somehow got a session, use it
@@ -134,7 +134,7 @@ const FirefighterNotificationsScreen = () => {
       await supabase.auth.signOut();
       navigation.reset({
         index: 0,
-        routes: [{ name: 'LoginSelection' }]
+        routes: [{ name: 'Welcome', params: { fromLogout: true } }]
       });
     }
   };

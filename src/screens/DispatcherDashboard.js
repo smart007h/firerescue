@@ -13,6 +13,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
 import { Picker } from "@react-native-picker/picker";
 import { useAuth } from "../context/AuthContext";
+import { getAddressFromCoordinates } from "../services/locationService";
 
 const DispatcherDashboard = () => {
   const [activeIncidents, setActiveIncidents] = useState([]);
@@ -26,26 +27,91 @@ const DispatcherDashboard = () => {
   useEffect(() => {
     fetchActiveIncidents();
     fetchDispatcherInfo();
+    
+    // Set up real-time subscription for incident updates
+    const setupRealtimeSubscription = async () => {
+      const dispatcherId = await AsyncStorage.getItem("userId");
+      if (!dispatcherId) return;
+
+      console.log('Setting up real-time subscription for dispatcher:', dispatcherId);
+      
+      const channel = supabase
+        .channel('dispatcher-incidents')
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // Listen to all changes (INSERT, UPDATE, DELETE)
+            schema: 'public',
+            table: 'incidents',
+            filter: `dispatcher_id=eq.${dispatcherId}`,
+          },
+          (payload) => {
+            console.log('Real-time incident update received:', payload);
+            // Refresh the incidents list when any change occurs
+            fetchActiveIncidents();
+          }
+        )
+        .subscribe((status) => {
+          console.log('Subscription status:', status);
+        });
+
+      return () => {
+        console.log('Cleaning up real-time subscription');
+        supabase.removeChannel(channel);
+      };
+    };
+
+    const cleanup = setupRealtimeSubscription();
+    
+    return () => {
+      if (cleanup) cleanup.then(fn => fn && fn());
+    };
   }, []);
 
   const fetchActiveIncidents = async () => {
     setRefreshing(true);
     try {
       const dispatcherId = await AsyncStorage.getItem("userId");
+      console.log('Fetching active incidents for dispatcher:', dispatcherId);
+      
       if (!dispatcherId) {
+        console.log('No dispatcher ID found - clearing incidents');
         setActiveIncidents([]);
         setRefreshing(false);
         return;
       }
+
+      // Query for active incidents (in_progress status only)
       const { data, error } = await supabase
         .from("incidents")
         .select("*")
         .eq("dispatcher_id", dispatcherId)
         .eq("status", "in_progress")
         .order("created_at", { ascending: false });
-      if (error) throw error;
-      setActiveIncidents(data || []);
+        
+      if (error) {
+        console.error('Error fetching active incidents:', error);
+        throw error;
+      }
+      
+      console.log(`Found ${data?.length || 0} active incidents for dispatcher ${dispatcherId}`);
+      console.log('Active incidents data:', data);
+      
+      // Format locations for all incidents
+      const incidentsWithFormattedLocations = await Promise.all(
+        (data || []).map(async (incident) => {
+          try {
+            const formattedLocation = await formatLocation(incident.location);
+            return { ...incident, formattedLocation };
+          } catch (error) {
+            return { ...incident, formattedLocation: incident.location };
+          }
+        })
+      );
+      
+      setActiveIncidents(incidentsWithFormattedLocations);
     } catch (err) {
+      console.error('Error in fetchActiveIncidents:', err);
       setActiveIncidents([]);
     } finally {
       setRefreshing(false);
@@ -66,6 +132,36 @@ const DispatcherDashboard = () => {
     }
   };
 
+  const formatLocation = async (location) => {
+    if (!location) return 'Location not available';
+    
+    // If location is already a readable address (contains letters), return it quickly
+    if (/[a-zA-Z]/.test(location) && !location.includes(',')) {
+      return location;
+    }
+    
+    try {
+      // Quick check for coordinate format
+      if (location.includes(',') && /^-?\d+\.?\d*\s*,\s*-?\d+\.?\d*$/.test(location.trim())) {
+        const coords = location.split(',').map(coord => parseFloat(coord.trim()));
+        const [lat, lng] = coords;
+        
+        if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          try {
+            const formattedAddress = await getAddressFromCoordinates(lat, lng);
+            return formattedAddress || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          } catch (error) {
+            return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          }
+        }
+      }
+      
+      return location;
+    } catch (error) {
+      return location;
+    }
+  };
+
   const onRefresh = () => {
     fetchActiveIncidents();
   };
@@ -74,7 +170,44 @@ const DispatcherDashboard = () => {
     navigation.navigate("DispatchTrackingScreen", {
       incidentId: incident.id,
       incident,
+      onStatusChange: () => {
+        // Refresh the dashboard when status changes
+        fetchActiveIncidents();
+      }
     });
+  };
+
+  const handleResolveIncident = async (incident) => {
+    Alert.alert(
+      'Resolve Incident',
+      `Are you sure you want to mark this incident as resolved?\n\nType: ${incident.incident_type || 'Unknown'}\nLocation: ${incident.formattedLocation || incident.location}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Resolve',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('incidents')
+                .update({ 
+                  status: 'resolved',
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', incident.id);
+
+              if (error) throw error;
+
+              Alert.alert('Success', 'Incident has been resolved and will be removed from active list');
+              fetchActiveIncidents(); // Refresh the list
+            } catch (error) {
+              console.error('Error resolving incident:', error);
+              Alert.alert('Error', 'Failed to resolve incident. Please try again.');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleTrackIncident = () => {
@@ -99,7 +232,15 @@ const DispatcherDashboard = () => {
             </Text>
           ) : null}
         </View>
-        <TouchableOpacity style={styles.logoutButton} onPress={signOut}>
+        <TouchableOpacity style={styles.logoutButton} onPress={async () => {
+          try {
+            await signOut();
+            console.log('Dispatcher logged out successfully');
+            // Don't navigate manually - let AuthContext and AppNavigator handle it
+          } catch (error) {
+            console.error('Error logging out:', error);
+          }
+        }}>
           <Ionicons name="log-out-outline" size={24} color="#DC3545" />
         </TouchableOpacity>
       </View>
@@ -120,7 +261,7 @@ const DispatcherDashboard = () => {
                 key={incident.id}
                 label={`${
                   incident.type || incident.incident_type || "Incident"
-                } (${incident.location})`}
+                } (${incident.formattedLocation || incident.location})`}
                 value={incident.id}
               />
             ))}
@@ -158,15 +299,28 @@ const DispatcherDashboard = () => {
 
         {/* Active Incidents */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Active Incidents</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Active Incidents</Text>
+            <Text style={styles.incidentCount}>
+              {activeIncidents.length} active
+            </Text>
+          </View>
           <ScrollView
             style={styles.incidentsList}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
             }
           >
-            {activeIncidents.length === 0 ? (
-              <Text style={styles.noIncidents}>No active incidents</Text>
+            {refreshing && activeIncidents.length === 0 ? (
+              <Text style={styles.loadingText}>Loading active incidents...</Text>
+            ) : activeIncidents.length === 0 ? (
+              <View style={styles.noIncidentsContainer}>
+                <Ionicons name="checkmark-circle" size={48} color="#34C759" />
+                <Text style={styles.noIncidents}>No active incidents</Text>
+                <Text style={styles.noIncidentsSubtext}>
+                  All your assigned incidents are resolved
+                </Text>
+              </View>
             ) : (
               activeIncidents.map((incident) => (
                 <TouchableOpacity
@@ -183,7 +337,7 @@ const DispatcherDashboard = () => {
                     </Text>
                   </View>
                   <Text style={styles.incidentLocation}>
-                    {incident.location}
+                    {incident.formattedLocation || incident.location}
                   </Text>
                   <Text style={styles.incidentDescription} numberOfLines={2}>
                     {incident.description}
@@ -195,6 +349,23 @@ const DispatcherDashboard = () => {
                     <Text style={styles.incidentPriority}>
                       Priority: {incident.priority || "N/A"}
                     </Text>
+                  </View>
+                  
+                  {/* Action Buttons */}
+                  <View style={styles.incidentActions}>
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.trackButton]}
+                      onPress={() => handleViewIncident(incident)}
+                    >
+                      <Text style={styles.actionButtonText}>Track</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.resolveButton]}
+                      onPress={() => handleResolveIncident(incident)}
+                    >
+                      <Text style={styles.actionButtonText}>Resolve</Text>
+                    </TouchableOpacity>
                   </View>
                 </TouchableOpacity>
               ))
@@ -258,20 +429,46 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   sectionTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    marginBottom: 16,
     color: "#000000",
+  },
+  incidentCount: {
+    fontSize: 14,
+    color: '#007AFF',
+    fontWeight: '600',
   },
   incidentsList: {
     flex: 1,
   },
+  noIncidentsContainer: {
+    alignItems: 'center',
+    paddingVertical: 30,
+  },
   noIncidents: {
-    textAlign: "center",
-    color: "#666666",
     fontSize: 16,
-    marginTop: 20,
+    color: '#666',
+    marginTop: 10,
+    fontWeight: '600',
+  },
+  noIncidentsSubtext: {
+    fontSize: 14,
+    color: '#888',
+    textAlign: 'center',
+    marginTop: 5,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#888',
+    textAlign: 'center',
+    paddingVertical: 20,
   },
   incidentCard: {
     backgroundColor: "#FFFFFF",
@@ -324,6 +521,33 @@ const styles = StyleSheet.create({
   incidentPriority: {
     fontSize: 14,
     color: "#FF3B30",
+  },
+  incidentActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5EA',
+    gap: 12,
+  },
+  actionButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  trackButton: {
+    backgroundColor: '#007AFF',
+  },
+  resolveButton: {
+    backgroundColor: '#34C759',
+  },
+  actionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   pickerCard: {
     backgroundColor: "#fff",

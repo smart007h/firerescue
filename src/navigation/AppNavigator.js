@@ -130,6 +130,12 @@ const DispatchNewIncidentScreen =
 const CertificateApplicationScreen =
   require("../screens/CertificateApplication").default ||
   require("../screens/CertificateApplication");
+const CivilianTrackingScreen =
+  require("../screens/CivilianTrackingScreen").default ||
+  require("../screens/CivilianTrackingScreen");
+const CivilianIncidentDetails =
+  require("../screens/CivilianIncidentDetails").default ||
+  require("../screens/CivilianIncidentDetails");
 
 // Services and contexts
 const { getCurrentUser, initializeAuth } = require("../services/auth");
@@ -421,6 +427,22 @@ const UserStack = () => (
         drawerItemStyle: { display: 'none' }
       }}
     />
+    <Drawer.Screen
+      name="CivilianTrackingScreen"
+      component={CivilianTrackingScreen}
+      options={{ 
+        title: "Track Incident",
+        drawerItemStyle: { display: 'none' }
+      }}
+    />
+    <Drawer.Screen
+      name="CivilianIncidentDetails"
+      component={CivilianIncidentDetails}
+      options={{ 
+        title: "Incident Details",
+        drawerItemStyle: { display: 'none' }
+      }}
+    />
   </Drawer.Navigator>
 );
 
@@ -504,7 +526,7 @@ const DispatcherStack = () => (
 
 // Main App Navigator
 const AppNavigator = () => {
-  const { userRole, loading } = useAuth();
+  const { userRole, loading, setNavigationRef } = useAuth();
   const [splashDone, setSplashDone] = useState(false);
 
   console.log("[AppNavigator] userRole:", userRole, "loading:", loading, "splashDone:", splashDone);

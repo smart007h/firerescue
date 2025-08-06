@@ -7,20 +7,32 @@ import {
   TouchableOpacity,
   Alert,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { supabase } from '../config/supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const IncidentDetailsScreen = ({ route, navigation }) => {
-  const { incident } = route.params;
+  const { incident, incidentId } = route.params || {};
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [incidentDetails, setIncidentDetails] = useState(incident);
+  const [incidentDetails, setIncidentDetails] = useState(incident || null);
   const [locationAddress, setLocationAddress] = useState('');
+  const [isCivilianUser, setIsCivilianUser] = useState(false);
+
+  // Get the actual incident ID - either from the incident object or the incidentId parameter
+  const actualIncidentId = incident?.id || incidentId;
 
   useEffect(() => {
-    loadIncidentDetails();
-  }, [incident.id]);
+    if (actualIncidentId) {
+      loadIncidentDetails();
+    } else {
+      console.error('No incident ID provided to IncidentDetailsScreen');
+      Alert.alert('Error', 'No incident ID provided', [
+        { text: 'OK', onPress: () => navigation.goBack() }
+      ]);
+    }
+  }, [actualIncidentId]);
 
   useEffect(() => {
     // Convert coordinates to address when incident details are loaded
@@ -104,6 +116,31 @@ const IncidentDetailsScreen = ({ route, navigation }) => {
     }
   };
 
+  const checkAndRefreshSession = async () => {
+    try {
+      console.log('Quick auth check...');
+      
+      // Ultra-fast check: if station data exists, assume firefighter is authenticated
+      const hasStationData = await AsyncStorage.getItem('stationData');
+      if (hasStationData) {
+        console.log('Station data found - firefighter authenticated');
+        setIsCivilianUser(false);
+        return true;
+      }
+
+      // Only for users without station data, treat as civilian (no auth needed)
+      console.log('No station data - civilian user');
+      setIsCivilianUser(true);
+      return true;
+      
+    } catch (error) {
+      console.error('Error in quick auth check:', error);
+      // If anything fails, default to civilian mode (safe fallback)
+      setIsCivilianUser(true);
+      return true;
+    }
+  };
+
   const loadIncidentDetails = async () => {
     const maxRetries = 3;
     const retryDelay = 1000; // 1 second
@@ -118,22 +155,17 @@ const IncidentDetailsScreen = ({ route, navigation }) => {
       try {
         setLoading(true);
         
-        // First try to get the session to ensure we're authenticated
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) {
-          console.error('Session error:', sessionError);
-          throw new Error('Authentication error');
+        // Quick session check (optimized for firefighters)
+        const isSessionValid = await checkAndRefreshSession();
+        if (!isSessionValid) {
+          throw new Error('Session invalid or expired');
         }
 
-        if (!session) {
-          throw new Error('No active session');
-        }
-
-        // Now fetch the incident details
+        // Fetch the incident details
         const { data, error } = await supabase
           .from('incidents')
           .select('*')
-          .eq('id', incident.id)
+          .eq('id', actualIncidentId)
           .single();
 
         if (error) {
@@ -145,6 +177,16 @@ const IncidentDetailsScreen = ({ route, navigation }) => {
 
         if (!data) {
           throw new Error('No incident data found');
+        }
+
+        // SECURITY: Only check civilian access restrictions (skip for firefighters)
+        if (isCivilianUser) {
+          const { data: { user }, error: userError } = await supabase.auth.getUser();
+          if (user && data.reported_by !== user.id) {
+            Alert.alert('Access Denied', 'You can only view incidents you reported');
+            navigation.goBack();
+            return;
+          }
         }
 
         // If we have a station_id, fetch the station details
@@ -216,7 +258,7 @@ const IncidentDetailsScreen = ({ route, navigation }) => {
       const { error } = await supabase
         .from('incidents')
         .update({ status: newStatus })
-        .eq('id', incident.id);
+        .eq('id', actualIncidentId);
 
       if (error) throw error;
       await loadIncidentDetails();
@@ -255,11 +297,24 @@ const IncidentDetailsScreen = ({ route, navigation }) => {
   };
 
   const handleTrackingPress = () => {
-    navigation.navigate('IncidentTracking', { incidentId: incident.id });
+    navigation.navigate('IncidentTracking', { incidentId: actualIncidentId });
+  };
+
+  const handleChatPress = () => {
+    navigation.navigate('IncidentChat', { incidentId: actualIncidentId });
   };
 
   const isTrackingAvailable = () => {
     return incidentDetails?.status === 'pending' || incidentDetails?.status === 'in_progress';
+  };
+
+  const isChatAvailable = () => {
+    // Chat is available if there's a dispatcher assigned or if incident is active
+    return incidentDetails && (
+      incidentDetails.dispatcher_id || 
+      incidentDetails.status === 'pending' || 
+      incidentDetails.status === 'in_progress'
+    );
   };
 
   return (
@@ -273,12 +328,28 @@ const IncidentDetailsScreen = ({ route, navigation }) => {
         <Text style={styles.title}>Incident Details</Text>
       </View>
 
-      <ScrollView
-        style={styles.content}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-      >
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#DC3545" />
+          <Text style={styles.loadingText}>Loading incident details...</Text>
+        </View>
+      ) : !incidentDetails ? (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Incident not found</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.retryButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.content}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+        >
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <Text style={styles.incidentType}>
@@ -407,11 +478,29 @@ const IncidentDetailsScreen = ({ route, navigation }) => {
               style={styles.trackingButton}
               onPress={handleTrackingPress}
             >
-              <Text style={styles.trackingButtonText}>Track Incident</Text>
+              <Text style={styles.trackingButtonText}>🗺️ Track Incident</Text>
             </TouchableOpacity>
+          )}
+
+          {isChatAvailable() && (
+            <TouchableOpacity
+              style={styles.chatButton}
+              onPress={handleChatPress}
+            >
+              <Text style={styles.chatButtonText}>💬 Chat with Dispatcher</Text>
+            </TouchableOpacity>
+          )}
+
+          {!incidentDetails?.dispatcher_id && incidentDetails?.status === 'pending' && (
+            <View style={styles.infoCard}>
+              <Text style={styles.infoText}>
+                ⏳ Waiting for dispatcher assignment. You'll be able to chat once a dispatcher is assigned to your incident.
+              </Text>
+            </View>
           )}
         </View>
       </ScrollView>
+      )}
     </View>
   );
 };
@@ -581,6 +670,68 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginLeft: 10,
+  },
+  chatButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#34C759',
+    padding: 15,
+    borderRadius: 8,
+    marginTop: 15,
+  },
+  chatButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 10,
+  },
+  infoCard: {
+    backgroundColor: '#FFF9C4',
+    padding: 15,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FFB74D',
+    marginTop: 15,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#5D4037',
+    lineHeight: 20,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#DC3545',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: '#DC3545',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

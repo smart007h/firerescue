@@ -23,7 +23,7 @@ const IncidentChatScreen = () => {
   const [error, setError] = useState(null);
   const navigation = useNavigation();
   const route = useRoute();
-  const { incidentId } = route.params;
+  const { incidentId, returnTo } = route.params;
   const flatListRef = useRef(null);
   const [incident, setIncident] = useState(null);
   const [otherParticipant, setOtherParticipant] = useState(null);
@@ -60,18 +60,16 @@ const IncidentChatScreen = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, isAuthenticated, incident, isIncidentParticipant]);
 
-  // Debug: log user and incident info for troubleshooting chat access
+  // Debug: log user and incident info for troubleshooting chat access (only for errors)
   useEffect(() => {
-    if (__DEV__) {
-      console.log('IncidentChatScreen debug:', {
-        currentUser,
-        incident,
-        isIncidentParticipant,
+    if (__DEV__ && (!isAuthenticated || !isIncidentParticipant || notAllowedReason)) {
+      console.log('IncidentChatScreen access issue:', {
         isAuthenticated,
+        isIncidentParticipant,
         notAllowedReason,
       });
     }
-  }, [currentUser, incident, isIncidentParticipant, isAuthenticated, notAllowedReason]);
+  }, [isAuthenticated, isIncidentParticipant, notAllowedReason]);
 
   // Debug: log route params, session, and user info on mount
   useEffect(() => {
@@ -118,6 +116,78 @@ const IncidentChatScreen = () => {
         return;
       }
 
+      // For dispatchers, ensure they have a profile record before sending messages
+      if (currentUser.role === 'dispatcher') {
+        // First check by ID, then by email if ID check fails
+        let existingProfile = null;
+        
+        const { data: profileById, error: profileCheckError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', currentUser.id)
+          .maybeSingle();
+
+        if (profileCheckError && profileCheckError.code !== 'PGRST116') {
+          console.error('Error checking profile by ID:', profileCheckError);
+        }
+
+        existingProfile = profileById;
+
+        // If no profile found by ID, check by email (in case there's a profile with different ID)
+        if (!existingProfile) {
+          const { data: profileByEmail, error: emailCheckError } = await supabase
+            .from('profiles')
+            .select('id, email')
+            .eq('email', currentUser.email)
+            .maybeSingle();
+
+          if (emailCheckError && emailCheckError.code !== 'PGRST116') {
+            console.error('Error checking profile by email:', emailCheckError);
+          }
+
+          existingProfile = profileByEmail;
+
+          // If profile exists with different ID, update it to use the current user's ID
+          if (existingProfile && existingProfile.id !== currentUser.id) {
+            const { error: updateError } = await supabase
+              .from('profiles')
+              .update({
+                id: currentUser.id,
+                full_name: currentUser.user_metadata?.full_name || currentUser.email,
+                phone: currentUser.user_metadata?.phone,
+              })
+              .eq('email', currentUser.email);
+
+            if (updateError) {
+              console.error('Error updating existing profile:', updateError);
+            } else {
+              console.log('Updated existing profile with new ID');
+            }
+          }
+        }
+
+        // Create profile only if it doesn't exist at all
+        if (!existingProfile) {
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .insert({
+              id: currentUser.id,
+              email: currentUser.email,
+              full_name: currentUser.user_metadata?.full_name || currentUser.email,
+              phone: currentUser.user_metadata?.phone,
+              role: 'user' // Use 'user' role since dispatcher isn't allowed in profiles constraint
+            });
+
+          if (profileError) {
+            console.error('Error creating profile:', profileError);
+            setError('Failed to create user profile');
+            return;
+          } else {
+            console.log('Created new profile for dispatcher');
+          }
+        }
+      }
+
       const { error } = await supabase
         .from('chat_messages')
         .insert({
@@ -142,18 +212,15 @@ const IncidentChatScreen = () => {
         .from('incidents')
         .select('id, reported_by, dispatcher_id')
         .eq('id', incidentId)
-        .single();
+        .maybeSingle();
       if (!error && data) {
         setIncident(data);
-        // Debug log: print the loaded incident and current user
-        console.log('DEBUG: Incident loaded:', data);
-        console.log('DEBUG: Current user:', currentUser);
         // Determine the other participant
         if (currentUser && data.reported_by && data.dispatcher_id) {
           // You may want to fetch reporter/dispatcher profiles separately if needed
         }
-      } else {
-        console.log('DEBUG: Incident fetch error:', error);
+      } else if (error) {
+        console.error('Error loading incident for chat:', error);
       }
     } catch (err) {
       console.error('Error loading incident for chat:', err);
@@ -206,13 +273,25 @@ const IncidentChatScreen = () => {
     );
   };
 
+  const handleBackPress = () => {
+    if (returnTo === 'UserReportHistory') {
+      navigation.navigate('UserReportHistory');
+    } else if (returnTo === 'CivilianIncidentDetails') {
+      navigation.navigate('CivilianIncidentDetails', { incidentId, incident });
+    } else if (returnTo === 'CivilianTrackingScreen') {
+      navigation.navigate('CivilianTrackingScreen', { incidentId, incident });
+    } else {
+      navigation.goBack();
+    }
+  };
+
   if (authLoading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => navigation.goBack()}
+            onPress={handleBackPress}
           >
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
@@ -232,7 +311,7 @@ const IncidentChatScreen = () => {
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => navigation.goBack()}
+            onPress={handleBackPress}
           >
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
@@ -250,7 +329,7 @@ const IncidentChatScreen = () => {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={handleBackPress}
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>

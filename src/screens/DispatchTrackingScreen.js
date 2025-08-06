@@ -71,32 +71,63 @@ function DispatchTrackingScreen() {
       if (incidentData) {
         console.log('Incident data:', incidentData);
         setIncident(incidentData);
+
+        // SECURITY CHECK: Verify dispatcher access
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) {
+          Alert.alert('Error', 'Authentication required');
+          navigation.navigate('Welcome');
+          return;
+        }
+
+        // Only assigned dispatchers can use this tracking screen
+        if (incidentData.dispatcher_id && incidentData.dispatcher_id !== user.id) {
+          Alert.alert('Access Denied', 'You can only track incidents assigned to you');
+          navigation.goBack();
+          return;
+        }
+
+        console.log('Dispatcher authorized to track incident:', incidentData.id);
         
+        // Try to parse location from various possible formats
+        let latitude = null;
+        let longitude = null;
+        
+        // Method 1: Check for separate latitude/longitude fields
         if (incidentData.latitude && incidentData.longitude) {
-          const location = {
-            latitude: parseFloat(incidentData.latitude),
-            longitude: parseFloat(incidentData.longitude)
-          };
+          latitude = parseFloat(incidentData.latitude);
+          longitude = parseFloat(incidentData.longitude);
+        }
+        // Method 2: Check for location field with comma-separated coordinates
+        else if (incidentData.location && incidentData.location.includes(',')) {
+          const coords = incidentData.location.split(',').map(coord => parseFloat(coord.trim()));
+          if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
+            latitude = coords[0];
+            longitude = coords[1];
+          }
+        }
+        
+        // If we found valid coordinates, set the incident location
+        if (latitude !== null && longitude !== null && 
+            !isNaN(latitude) && !isNaN(longitude) &&
+            latitude >= -90 && latitude <= 90 && 
+            longitude >= -180 && longitude <= 180) {
+          const location = { latitude, longitude };
           console.log('Setting incident location:', location);
           setIncidentLocation(location);
+        } else {
+          console.warn('No valid coordinates found for incident, using default location');
+          // Use default location (Accra, Ghana)
+          setIncidentLocation({ latitude: 5.6037, longitude: -0.1870 });
         }
 
         // Get dispatcher location if dispatcher is assigned
         if (incidentData.dispatcher_id) {
           console.log('Loading dispatcher location for:', incidentData.dispatcher_id);
           
-          // Check if incident has valid coordinates
-          const hasValidCoordinates = incidentData.latitude && incidentData.longitude && 
-                                    !isNaN(parseFloat(incidentData.latitude)) && 
-                                    !isNaN(parseFloat(incidentData.longitude));
-          
-          if (!hasValidCoordinates) {
-            console.warn('Incident has invalid coordinates, using default location');
-          }
-          
-          // Use default coordinates if incident coordinates are invalid
-          const defaultLat = hasValidCoordinates ? parseFloat(incidentData.latitude) : 5.6037; // Accra, Ghana
-          const defaultLng = hasValidCoordinates ? parseFloat(incidentData.longitude) : -0.1870;
+          // Use the coordinates we found above or default coordinates
+          const defaultLat = latitude !== null ? latitude : 5.6037; // Accra, Ghana
+          const defaultLng = longitude !== null ? longitude : -0.1870;
           
           // First, check if there's an existing location
           const { data: existingLocation, error: checkError } = await supabase
@@ -288,8 +319,8 @@ function DispatchTrackingScreen() {
         provider={PROVIDER_GOOGLE}
         style={styles.map}
         initialRegion={{
-          latitude: incidentLocation?.latitude || 0,
-          longitude: incidentLocation?.longitude || 0,
+          latitude: incidentLocation?.latitude || 5.6037, // Default to Accra, Ghana
+          longitude: incidentLocation?.longitude || -0.1870,
           latitudeDelta: 0.0922,
           longitudeDelta: 0.0421,
         }}

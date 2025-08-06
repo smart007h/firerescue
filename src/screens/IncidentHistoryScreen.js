@@ -9,6 +9,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { supabase } from '../config/supabaseClient';
+import { getAddressFromCoordinates } from '../services/locationService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const IncidentHistoryScreen = ({ navigation }) => {
@@ -36,13 +37,56 @@ const IncidentHistoryScreen = ({ navigation }) => {
       const { data, error } = await query;
 
       if (error) throw error;
-      setIncidents(data || []);
+      
+      // Format locations for all incidents
+      const incidentsWithFormattedLocations = await Promise.all(
+        (data || []).map(async (incident) => {
+          try {
+            const formattedLocation = await formatLocation(incident.location);
+            return { ...incident, formattedLocation };
+          } catch (error) {
+            return { ...incident, formattedLocation: incident.location };
+          }
+        })
+      );
+      
+      setIncidents(incidentsWithFormattedLocations);
     } catch (error) {
       console.error('Error loading incidents:', error);
       Alert.alert('Error', 'Failed to load incident history');
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const formatLocation = async (location) => {
+    if (!location) return 'Location not available';
+    
+    // If location is already a readable address (contains letters), return it quickly
+    if (/[a-zA-Z]/.test(location) && !location.includes(',')) {
+      return location;
+    }
+    
+    try {
+      // Quick check for coordinate format
+      if (location.includes(',') && /^-?\d+\.?\d*\s*,\s*-?\d+\.?\d*$/.test(location.trim())) {
+        const coords = location.split(',').map(coord => parseFloat(coord.trim()));
+        const [lat, lng] = coords;
+        
+        if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          try {
+            const formattedAddress = await getAddressFromCoordinates(lat, lng);
+            return formattedAddress || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          } catch (error) {
+            return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          }
+        }
+      }
+      
+      return location;
+    } catch (error) {
+      return location;
     }
   };
 
@@ -167,7 +211,7 @@ const IncidentHistoryScreen = ({ navigation }) => {
               </View>
 
               <View style={styles.detailRow}>
-                <Text style={styles.detailText}>{incident.location}</Text>
+                <Text style={styles.detailText}>{incident.formattedLocation || incident.location}</Text>
               </View>
 
               <View style={styles.detailRow}>
@@ -192,6 +236,47 @@ const IncidentHistoryScreen = ({ navigation }) => {
               <Text style={styles.description} numberOfLines={2}>
                 {incident.description}
               </Text>
+
+              {/* Quick Action Buttons */}
+              <View style={styles.actionButtonsContainer}>
+                <TouchableOpacity
+                  style={styles.detailsButton}
+                  onPress={() => handleViewIncident(incident)}
+                >
+                  <Text style={styles.actionButtonText}>📋 Details</Text>
+                </TouchableOpacity>
+
+                {(incident.status === 'pending' || incident.status === 'in_progress') && (
+                  <TouchableOpacity
+                    style={styles.trackButton}
+                    onPress={() => navigation.navigate('IncidentTracking', { incidentId: incident.id })}
+                  >
+                    <Text style={styles.actionButtonText}>🗺️ Track</Text>
+                  </TouchableOpacity>
+                )}
+
+                {incident.dispatcher_id && (
+                  <TouchableOpacity
+                    style={styles.chatButton}
+                    onPress={() => navigation.navigate('IncidentChat', { incidentId: incident.id })}
+                  >
+                    <Text style={styles.actionButtonText}>💬 Chat</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Status Information */}
+              {incident.status === 'pending' && !incident.dispatcher_id && (
+                <View style={styles.statusInfo}>
+                  <Text style={styles.statusInfoText}>⏳ Waiting for dispatcher assignment</Text>
+                </View>
+              )}
+
+              {incident.dispatcher_id && (
+                <View style={styles.statusInfo}>
+                  <Text style={styles.statusInfoText}>✅ Dispatcher assigned</Text>
+                </View>
+              )}
             </TouchableOpacity>
           ))
         )}
@@ -324,6 +409,54 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666666',
     marginTop: 8,
+  },
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  detailsButton: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    flex: 1,
+    marginRight: 8,
+  },
+  trackButton: {
+    backgroundColor: '#FF9500',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    flex: 1,
+    marginRight: 8,
+  },
+  chatButton: {
+    backgroundColor: '#34C759',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    flex: 1,
+  },
+  actionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  statusInfo: {
+    backgroundColor: '#F8F9FA',
+    padding: 8,
+    borderRadius: 6,
+    marginTop: 8,
+  },
+  statusInfoText: {
+    fontSize: 12,
+    color: '#666666',
+    textAlign: 'center',
   },
 });
 

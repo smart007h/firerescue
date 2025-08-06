@@ -31,9 +31,11 @@ const MenuScreen = ({ navigation }) => {
             style: 'destructive',
             onPress: async () => {
               console.log('[MenuScreen] Signing out...');
-              await signOut();
-              // Close drawer after signing out
+              // Close drawer first
               navigation.closeDrawer();
+              // Sign out (this will update the auth context and trigger navigation)
+              await signOut();
+              console.log('[MenuScreen] Signed out successfully');
             },
           },
         ]

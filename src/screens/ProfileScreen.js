@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, FlatList, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, FlatList, ActivityIndicator, Alert } from 'react-native';
 import { Text, Avatar, Button, Card, Divider, IconButton } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
@@ -35,7 +35,7 @@ const ProfileScreen = ({ navigation, route }) => {
         .from('profiles')
         .select('*')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.error('Error loading profile:', error);
@@ -98,13 +98,21 @@ const ProfileScreen = ({ navigation, route }) => {
             text: 'Logout',
             style: 'destructive',
             onPress: async () => {
-              await signOut();
+              try {
+                await signOut();
+                console.log('User logged out successfully');
+                // Don't navigate manually - let AuthContext and AppNavigator handle it
+              } catch (error) {
+                console.error('Error during logout:', error);
+                Alert.alert('Logout Error', 'Failed to log out. Please try again.');
+              }
             },
           },
         ]
       );
     } catch (error) {
       console.error('Logout error:', error);
+      Alert.alert('Error', 'An error occurred. Please try again.');
     }
   };
 

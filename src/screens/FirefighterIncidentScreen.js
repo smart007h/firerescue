@@ -20,6 +20,7 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState(route.params?.initialFilter || 'all');
   const [formattedLocation, setFormattedLocation] = useState('');
+  const [loadingProgress, setLoadingProgress] = useState(0);
   const incidentId = route.params?.incidentId;
   const passedIncidentData = route.params?.incidentData;
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -72,7 +73,7 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
     if (selectedStatus !== 'all') {
       if (selectedStatus === 'resolved') {
         filtered = filtered.filter(incident => 
-          ['resolved', 'cancelled', 'completed', 'rejected'].includes(incident.status)
+          incident.status && ['resolved', 'cancelled', 'completed', 'rejected'].includes(incident.status)
         );
         // If resolvedToday is set, filter for only today's resolved incidents
         if (route.params?.resolvedToday) {
@@ -93,9 +94,9 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(incident => 
-        incident.incident_type.toLowerCase().includes(query) ||
-        incident.description.toLowerCase().includes(query) ||
-        incident.location.toLowerCase().includes(query)
+        (incident.incident_type && incident.incident_type.toLowerCase().includes(query)) ||
+        (incident.description && incident.description.toLowerCase().includes(query)) ||
+        (incident.location && incident.location.toLowerCase().includes(query))
       );
     }
 
@@ -154,7 +155,7 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
         .select('*')
         .eq('station_id', stationData.station_id)
         .eq('is_active', true)
-        .single();
+        .maybeSingle();
 
       if (error || !stations) {
         console.log('Station not found or inactive');
@@ -175,36 +176,105 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
     try {
       setLoading(true);
       setError(null);
+      setLoadingProgress(0);
       const stationId = await AsyncStorage.getItem('stationId');
       if (!stationId) throw new Error('No station ID found');
       const isSessionValid = await checkAndRefreshSession();
       if (!isSessionValid) return;
-      // Query by updated_at DESC, then created_at DESC as fallback
+      
+      setLoadingProgress(20);
+      // Query with optimized selection and limit for better performance
       const { data: incidents, error: incidentsError } = await supabase
         .from('incidents')
-        .select(`*, incident_responses!left (id, status, response_time, firefighter_id)`)
+        .select(`
+          id,
+          incident_type,
+          location,
+          description,
+          created_at,
+          status,
+          updated_at,
+          reported_by,
+          dispatcher_id,
+          incident_responses!left (id, status, response_time, firefighter_id)
+        `)
         .eq('station_id', stationId)
         .order('updated_at', { ascending: false })
-        .order('created_at', { ascending: false });
+        .limit(50); // Limit initial load for better performance
       if (incidentsError) throw new Error(incidentsError.message || 'Failed to load incidents');
       if (!incidents) { setIncidents([]); return; }
-      const transformedData = incidents.map(incident => ({
-        ...incident,
-        responseStatus: incident.incident_responses?.[0]?.status || 'pending',
-        responseId: incident.incident_responses?.[0]?.id,
-        responseTime: incident.incident_responses?.[0]?.response_time
-      }));
-      const incidentsWithFormattedLocations = await Promise.all(
-        transformedData.map(async (incident) => {
-          if (incident.location) {
-            const formattedLocation = await formatLocation(incident.location);
-            return { ...incident, formattedLocation };
-          }
-          return incident;
-        })
-      );
-      setIncidents(incidentsWithFormattedLocations);
-      setFilteredIncidents(incidentsWithFormattedLocations);
+      
+      setLoadingProgress(40);
+      
+      // Reduce logging for better performance
+      console.log('Loaded incidents:', incidents.length);
+      
+      const transformedData = incidents.map((incident, index) => {
+        if (!incident.id) {
+          console.error(`Incident at index ${index} has no id`);
+        }
+        
+        // Safely extract incident response data
+        const firstResponse = incident.incident_responses && incident.incident_responses.length > 0 
+          ? incident.incident_responses[0] 
+          : null;
+        
+        return {
+          ...incident,
+          responseStatus: firstResponse?.status || 'pending',
+          responseId: firstResponse?.id || null,
+          responseTime: firstResponse?.response_time || null
+        };
+      });
+
+      setLoadingProgress(60);
+
+      // Format locations in smaller batches for faster response
+      const BATCH_SIZE = 3;
+      const incidentsWithFormattedLocations = [];
+      
+      for (let i = 0; i < transformedData.length; i += BATCH_SIZE) {
+        const batch = transformedData.slice(i, i + BATCH_SIZE);
+        const formattedBatch = await Promise.all(
+          batch.map(async (incident) => {
+            try {
+              if (incident.location) {
+                // Reduce timeout to 1 second for faster response
+                const formatLocationWithTimeout = (location, timeout = 1000) => {
+                  return Promise.race([
+                    formatLocation(location),
+                    new Promise((_, reject) => 
+                      setTimeout(() => reject(new Error('Timeout')), timeout)
+                    )
+                  ]);
+                };
+                
+                try {
+                  const formattedLocation = await formatLocationWithTimeout(incident.location);
+                  return { ...incident, formattedLocation };
+                } catch (timeoutError) {
+                  // Quick fallback without logging
+                  return { ...incident, formattedLocation: incident.location };
+                }
+              }
+              return incident;
+            } catch (error) {
+              return incident;
+            }
+          })
+        );
+        incidentsWithFormattedLocations.push(...formattedBatch);
+        // Update progress as we process batches
+        setLoadingProgress(60 + (30 * (i + BATCH_SIZE) / transformedData.length));
+      }
+      
+      // Filter out any incidents without valid IDs
+      const validIncidents = incidentsWithFormattedLocations.filter(incident => incident && incident.id);
+      console.log('Valid incidents loaded:', validIncidents.length);
+      
+      setIncidents(validIncidents);
+      setFilteredIncidents(validIncidents);
+      setLoadingProgress(100);
       // Scroll to top after reload
       if (flatListRef.current) {
         flatListRef.current.scrollToOffset({ offset: 0, animated: true });
@@ -214,6 +284,7 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setLoadingProgress(0);
     }
   };
 
@@ -231,72 +302,99 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
         throw new Error('No incident ID provided');
       }
 
-      const { data: incidentData, error: incidentError } = await supabase
-        .from('incidents')
-        .select(`
-          id,
-          incident_type,
-          location,
-          description,
-          created_at,
-          media_urls,
-          status,
-          reported_by,
-          incident_responses (
+      // Load incident data and related data in parallel for better performance
+      const [incidentResult, reporterResult, dispatcherResult] = await Promise.allSettled([
+        supabase
+          .from('incidents')
+          .select(`
             id,
+            incident_type,
+            location,
+            description,
+            created_at,
+            media_urls,
             status,
-            response_time,
-            firefighter_id
-          ),
-          dispatcher_id
-        `)
-        .eq('id', incidentId)
-        .single();
+            reported_by,
+            dispatcher_id,
+            incident_responses (
+              id,
+              status,
+              response_time,
+              firefighter_id
+            )
+          `)
+          .eq('id', incidentId)
+          .single(),
+        
+        // We'll fetch reporter details after we know if we need them
+        Promise.resolve(null),
+        
+        // We'll fetch dispatcher details after we know if we need them  
+        Promise.resolve(null)
+      ]);
 
-      if (incidentError) {
-        console.error('Error fetching incident:', incidentError);
-        throw new Error(incidentError.message || 'Failed to load incident details');
+      if (incidentResult.status === 'rejected') {
+        console.error('Error fetching incident:', incidentResult.reason);
+        throw new Error(incidentResult.reason?.message || 'Failed to load incident details');
       }
       
+      const incidentData = incidentResult.value?.data;
       if (!incidentData) {
         throw new Error('Incident not found');
       }
 
       setIncident(incidentData);
 
-      // Format the location
+      // Format location and fetch related data in parallel
+      const parallelTasks = [];
+      
+      // Format location
       if (incidentData.location) {
-        formatAndSetLocation(incidentData.location);
+        parallelTasks.push(
+          formatAndSetLocation(incidentData.location).catch(error => {
+            console.error('Error formatting location:', error);
+            setFormattedLocation(incidentData.location || 'Location not available');
+          })
+        );
       }
 
+      // Fetch reporter details if needed
       if (incidentData.reported_by) {
-        const { data: reporterData, error: reporterError } = await supabase
-          .from('profiles')
-          .select('id, full_name, phone')
-          .eq('id', incidentData.reported_by)
-          .single();
-
-        if (reporterError) {
-          console.error('Error fetching reporter details:', reporterError);
-        } else if (reporterData) {
-          setReporter(reporterData);
-        }
+        parallelTasks.push(
+          supabase
+            .from('profiles')
+            .select('id, full_name, phone')
+            .eq('id', incidentData.reported_by)
+            .maybeSingle()
+            .then(({ data: reporterData, error: reporterError }) => {
+              if (!reporterError && reporterData) {
+                setReporter(reporterData);
+              }
+            })
+            .catch(error => console.error('Error fetching reporter details:', error))
+        );
       }
 
+      // Fetch dispatcher details if needed
       if (incidentData.dispatcher_id) {
-        try {
-          const { data: dispatcherData, error: dispatcherError } = await supabase
+        parallelTasks.push(
+          supabase
             .from('dispatchers')
             .select('dispatcher_id, name, phone, email, role, type')
             .eq('dispatcher_id', incidentData.dispatcher_id)
-            .single();
-          if (!dispatcherError && dispatcherData) {
-            setDispatcher(dispatcherData);
-          }
-        } catch (dispatcherError) {
-          console.error('Error fetching dispatcher details:', dispatcherError);
-        }
+            .maybeSingle()
+            .then(({ data: dispatcherData, error: dispatcherError }) => {
+              if (!dispatcherError && dispatcherData) {
+                setDispatcher(dispatcherData);
+              }
+            })
+            .catch(error => console.error('Error fetching dispatcher details:', error))
+        );
       }
+
+      // Execute all parallel tasks
+      await Promise.allSettled(parallelTasks);
+
     } catch (err) {
       console.error('Error in loadIncidentDetails:', err);
       setError(err.message || 'Failed to load incident details');
@@ -353,8 +451,8 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
         .select('id')
         .eq('incident_id', incidentId)
         .eq('firefighter_id', firefighterId)
-        .single();
-      if (responseError && responseError.code !== 'PGRST116') throw responseError;
+        .maybeSingle();
+      if (responseError) throw responseError;
       if (existingResponse) {
         const { error: updateError } = await supabase
           .from('incident_responses')
@@ -471,34 +569,37 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
 
   const formatLocation = async (location) => {
     if (!location) return 'Location not available';
-    // If location is already a readable address, return it
-    if (!location.includes(',')) return location;
+    
+    // If location is already a readable address (contains letters), return it quickly
+    if (/[a-zA-Z]/.test(location) && !location.includes(',')) {
+      return location;
+    }
+    
     try {
-      // Check if location is in coordinate format (contains comma and numbers)
-      if (location.includes(',') && /^-?\d+\.?\d*,-?\d+\.?\d*$/.test(location.replace(/\s/g, ''))) {
-        const [lat, lng] = location.split(',').map(Number);
-        if (!isNaN(lat) && !isNaN(lng)) {
-          // Use Google Maps Geocoding API instead of getAddressFromCoordinates
-          const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
-          const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`;
+      // Quick check for coordinate format
+      if (location.includes(',') && /^-?\d+\.?\d*\s*,\s*-?\d+\.?\d*$/.test(location.trim())) {
+        const coords = location.split(',').map(coord => parseFloat(coord.trim()));
+        const [lat, lng] = coords;
+        
+        if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
           try {
-            const response = await fetch(url);
-            const data = await response.json();
-            if (data.status === 'OK' && data.results.length > 0) {
-              return data.results[0].formatted_address;
-            }
-            return 'Location not available';
+            // Use shorter timeout for location service
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 1500);
+            
+            const formattedAddress = await getAddressFromCoordinates(lat, lng);
+            clearTimeout(timeoutId);
+            
+            return formattedAddress || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
           } catch (error) {
-            console.error('Google Geocoding API error:', error);
-            return 'Location not available';
+            // Quick fallback to coordinates
+            return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
           }
         }
       }
-      // If it's not coordinates, return as is
+      
       return location;
     } catch (error) {
-      console.error('Error formatting location:', error);
-      // Fallback to original location if there's an error
       return location;
     }
   };
@@ -508,8 +609,8 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
       const formatted = await formatLocation(location);
       setFormattedLocation(formatted);
     } catch (error) {
-      console.error('Error formatting location:', error);
-      setFormattedLocation(location);
+      console.error('Error in formatAndSetLocation:', error);
+      setFormattedLocation(location || 'Location not available');
     }
   };
 
@@ -520,15 +621,37 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
 
   const renderIncidentItem = ({ item }) => {
     console.log('Rendering incident item:', item);
+    
+    // Safety check: ensure item and item.id exist
+    if (!item || !item.id) {
+      console.error('Invalid incident item:', item);
+      return null; // Skip rendering this item
+    }
+    
+    // Additional debugging for the specific incident causing issues
+    if (item.id === "f8c8e85c-7b09-4765-aae8-200e91b9967b") {
+      console.log('Rendering problematic incident:', JSON.stringify(item, null, 2));
+      console.log('Item keys:', Object.keys(item));
+      console.log('Item.incident_responses:', item.incident_responses);
+      console.log('Item.responseId:', item.responseId);
+      console.log('Item.responseStatus:', item.responseStatus);
+    }
+    
     return (
     <TouchableOpacity
       style={[styles.incidentCard]}
       onPress={() => {
-        // Navigate to the FirefighterIncidentDetails screen in the main stack
-        navigation.navigate('FirefighterIncidentDetails', { 
-          incidentId: item.id,
-          fromList: true
-        });
+        try {
+          console.log(`Navigating to IncidentDetails for incident: ${item.id}`);
+          // Navigate to the IncidentDetails screen in the main stack
+          navigation.navigate('IncidentDetails', { 
+            incidentId: item.id,
+            fromList: true
+          });
+        } catch (navigationError) {
+          console.error('Navigation error:', navigationError);
+          Alert.alert('Error', 'Unable to open incident details. Please try again.');
+        }
       }}
     >
       <View style={styles.headerRow}>
@@ -593,7 +716,8 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
         </View>
       </View>
 
-      {(!item.status || item.status === 'pending') && (
+      {/* Action buttons disabled - incidents are now view-only */}
+      {/* {(!item.status || item.status === 'pending') && (
         <View style={styles.actionButtonsContainer}>
           <Button
             mode="contained"
@@ -612,7 +736,7 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
             Reject
           </Button>
         </View>
-      )}
+      )} */}
     </TouchableOpacity>
   )};
 
@@ -642,7 +766,7 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
           .from('profiles')
           .select('id, full_name, phone')
           .eq('id', reporterId)
-          .single();
+          .maybeSingle();
 
         if (reporterError) {
           console.error('Error fetching reporter details:', reporterError);
@@ -685,8 +809,13 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#DC3545" />
           <Text style={styles.loadingText}>
-            {incidentId ? 'Loading incident details...' : 'Loading incidents...'}
+            {incidentId ? 'Loading incident details...' : `Loading incidents... ${Math.round(loadingProgress)}%`}
           </Text>
+          {!incidentId && loadingProgress > 0 && (
+            <View style={styles.progressBar}>
+              <View style={[styles.progressFill, { width: `${loadingProgress}%` }]} />
+            </View>
+          )}
       </View>
       </SafeAreaView>
     );
@@ -832,7 +961,7 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
           ref={flatListRef}
           data={filteredIncidents}
           renderItem={renderIncidentItem}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item, index) => item?.id || `incident-${index}`}
           contentContainerStyle={styles.listContent}
           style={styles.list}
           refreshing={refreshing}
@@ -893,7 +1022,10 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
     );
   }
 
-  const incidentResponse = incident.incident_responses?.[0];
+  // Safely extract incident response data
+  const incidentResponse = incident.incident_responses && incident.incident_responses.length > 0 
+    ? incident.incident_responses[0] 
+    : null;
   const incidentStatus = incident.status || 'pending';
 
   // Show specific incident details
@@ -999,7 +1131,8 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
               </View>
             )}
 
-            {incident.status === 'pending' && (
+            {/* Action buttons disabled - incidents are now view-only */}
+            {/* {incident.status === 'pending' && (
               <View style={styles.actionButtonsContainer}>
                 <Button
                   mode="contained"
@@ -1018,7 +1151,7 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
                   Reject
                 </Button>
               </View>
-            )}
+            )} */}
           </Card.Content>
         </Card>
       </ScrollView>
@@ -1059,6 +1192,19 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     color: '#666',
+  },
+  progressBar: {
+    width: 200,
+    height: 4,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 2,
+    marginTop: 12,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#DC3545',
+    borderRadius: 2,
   },
   errorContainer: {
     flex: 1,
