@@ -136,6 +136,9 @@ const CivilianTrackingScreen =
 const CivilianIncidentDetails =
   require("../screens/CivilianIncidentDetails").default ||
   require("../screens/CivilianIncidentDetails");
+const FirefighterIncidentDetailsScreen =
+  require("../screens/FirefighterIncidentDetailsScreen").default ||
+  require("../screens/FirefighterIncidentDetailsScreen");
 
 // Services and contexts
 const { getCurrentUser, initializeAuth } = require("../services/auth");
@@ -461,6 +464,10 @@ const FirefighterStack = () => (
     <Stack.Screen
       name="IncidentResponse"
       component={IncidentResponseScreen}
+    />
+    <Stack.Screen
+      name="FirefighterIncidentDetails"
+      component={FirefighterIncidentDetailsScreen}
     />
     <Stack.Screen
       name="IncidentDetails"

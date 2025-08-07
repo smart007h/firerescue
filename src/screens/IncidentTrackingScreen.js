@@ -704,10 +704,15 @@ export default function IncidentTrackingScreen() {
           </View>
         </View>
         <TouchableOpacity
-          style={[styles.chatButton, !isIncidentParticipant && { opacity: 0.5 }]}
+          style={[
+            styles.chatButton, 
+            (!isIncidentParticipant || incident?.status === 'resolved' || incident?.status === 'cancelled') && { opacity: 0.5 }
+          ]}
           onPress={() => {
             if (!currentUser) {
               Alert.alert('Not Logged In', 'Please log in to use the chat feature.');
+            } else if (incident?.status === 'resolved' || incident?.status === 'cancelled') {
+              Alert.alert('Chat Not Available', 'Chat is no longer available for resolved or cancelled incidents. You can only view details.');
             } else if (!incident?.dispatcher_id) {
               Alert.alert('Chat Not Available', 'Chat will be available once a dispatcher is assigned to this incident.');
             } else if (!isIncidentParticipant) {
@@ -716,7 +721,7 @@ export default function IncidentTrackingScreen() {
               navigation.navigate('IncidentChat', { incidentId });
             }
           }}
-          disabled={!isIncidentParticipant}
+          disabled={!isIncidentParticipant || incident?.status === 'resolved' || incident?.status === 'cancelled'}
         >
           <IconComponent name="chatbubble-ellipses" size={24} color="#fff" />
         </TouchableOpacity>

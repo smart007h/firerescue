@@ -16,6 +16,47 @@ const DispatchIncidentHistoryScreen = ({ navigation }) => {
     loadIncidents();
   }, [filter]);
 
+  useEffect(() => {
+    // Set up real-time subscription for incident updates
+    const setupRealtimeSubscription = async () => {
+      const dispatcherId = await AsyncStorage.getItem("userId");
+      if (!dispatcherId) return;
+
+      console.log('Setting up real-time subscription for incident history, dispatcher:', dispatcherId);
+      
+      const channel = supabase
+        .channel('dispatcher-incident-history')
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // Listen to all changes (INSERT, UPDATE, DELETE)
+            schema: 'public',
+            table: 'incidents',
+            filter: `dispatcher_id=eq.${dispatcherId}`,
+          },
+          (payload) => {
+            console.log('Real-time incident history update received:', payload);
+            // Refresh the incidents list when any change occurs
+            loadIncidents();
+          }
+        )
+        .subscribe((status) => {
+          console.log('Incident history subscription status:', status);
+        });
+
+      return () => {
+        console.log('Cleaning up real-time incident history subscription');
+        supabase.removeChannel(channel);
+      };
+    };
+
+    const cleanup = setupRealtimeSubscription();
+    
+    return () => {
+      if (cleanup) cleanup.then(fn => fn && fn());
+    };
+  }, []);
+
   const loadIncidents = async () => {
     try {
       setLoading(true);

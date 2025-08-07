@@ -27,8 +27,8 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
   const flatListRef = useRef(null);
   const scrollY = useRef(new Animated.Value(0)).current;
 
-  const SUPABASE_FUNCTION_URL = 'https://agpxjkmubrrtkxfhjmjm.functions.supabase.co/assign-incident'; // TODO: Replace with your project ref
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFncHhqa211YnJydGt4ZmhqbWptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIzMDQxMjMsImV4cCI6MjA1Nzg4MDEyM30.Lo5yTS9q05WZqifn9Y-z-dau3oCs24S1qgCuHtVFMqM';
+  const SUPABASE_FUNCTION_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/assign-incident`;
+  const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
   useEffect(() => {
     if (incidentId) {
@@ -49,6 +49,48 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
       }
     } else {
       loadAllIncidents();
+      
+      // Set up real-time subscription for incident updates when viewing all incidents
+      const incidentSubscription = supabase
+        .channel('incident_updates')
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // Listen to all changes (INSERT, UPDATE, DELETE)
+            schema: 'public',
+            table: 'incidents',
+          },
+          (payload) => {
+            console.log('Real-time incident update received:', payload);
+            
+            if (payload.eventType === 'UPDATE') {
+              // Update the specific incident in the list
+              setIncidents(prevIncidents => 
+                prevIncidents.map(incident => 
+                  incident.id === payload.new.id 
+                    ? { ...incident, ...payload.new }
+                    : incident
+                )
+              );
+            } else if (payload.eventType === 'INSERT') {
+              // Add new incident to the list
+              const newIncident = payload.new;
+              setIncidents(prevIncidents => [newIncident, ...prevIncidents]);
+            } else if (payload.eventType === 'DELETE') {
+              // Remove deleted incident from the list
+              setIncidents(prevIncidents => 
+                prevIncidents.filter(incident => incident.id !== payload.old.id)
+              );
+            }
+          }
+        )
+        .subscribe();
+
+      // Cleanup subscription on unmount
+      return () => {
+        console.log('Cleaning up incident subscription');
+        supabase.removeChannel(incidentSubscription);
+      };
     }
   }, [incidentId, passedIncidentData]);
 
@@ -62,8 +104,17 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
       if (route.params?.initialFilter) {
         setSelectedStatus(route.params.initialFilter);
       }
+      
+      // Refresh incidents when screen comes into focus (e.g., returning from details screen)
+      if (route.params?.refresh) {
+        console.log('Refreshing incidents due to navigation param');
+        loadAllIncidents();
+        // Clear the refresh param to avoid infinite refreshes
+        navigation.setParams({ refresh: undefined });
+      }
+      
       // Optionally, reset searchQuery or other state here if needed
-    }, [route.params?.initialFilter])
+    }, [route.params?.initialFilter, route.params?.refresh])
   );
 
   const filterIncidents = () => {
@@ -642,9 +693,9 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
       style={[styles.incidentCard]}
       onPress={() => {
         try {
-          console.log(`Navigating to IncidentDetails for incident: ${item.id}`);
-          // Navigate to the IncidentDetails screen in the main stack
-          navigation.navigate('IncidentDetails', { 
+          console.log(`Navigating to FirefighterIncidentDetails for incident: ${item.id}`);
+          // Navigate to the FirefighterIncidentDetails screen specifically for firefighters
+          navigation.navigate('FirefighterIncidentDetails', { 
             incidentId: item.id,
             fromList: true
           });
@@ -659,19 +710,19 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
           <View style={[styles.incidentIconContainer, { backgroundColor: getStatusColor(item.status) }]}>
             <Ionicons
               name={getIncidentIcon(item.incident_type)}
-              size={32}
+              size={28}
               color="#fff"
             />
           </View>
-          <Text style={styles.incidentType}>{item.incident_type || 'Unknown Type'}</Text>
+          <Text style={styles.incidentType} numberOfLines={2} ellipsizeMode="tail">
+            {item.incident_type || 'Unknown Type'}
+          </Text>
         </View>
         <View style={styles.statusContainer}>
           <View style={[styles.statusBadge, { 
             backgroundColor: getStatusColor(item.status),
-            minWidth: 120,
-            alignItems: 'center',
           }]}>
-            <Text style={styles.statusText}>
+            <Text style={styles.statusText} numberOfLines={1}>
               {(item.status || 'pending').toUpperCase()}
             </Text>
           </View>
@@ -1250,73 +1301,87 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
+    overflow: 'hidden', // Prevent content overflow
   },
   headerRow: {
     padding: 16,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column', // Changed to column to prevent overlap
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.1)',
+    gap: 12, // Add consistent spacing
   },
   incidentTypeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    marginBottom: 8, // Add space between type and status
   },
   incidentIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48, // Reduced size for better proportions
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    flexShrink: 0, // Prevent shrinking
   },
   incidentType: {
-    fontSize: 24,
+    fontSize: 18, // Reduced font size to prevent overflow
     fontWeight: 'bold',
     color: '#1f2937',
+    flex: 1, // Allow text to wrap
+    flexWrap: 'wrap',
+    lineHeight: 24, // Better line spacing
   },
   statusContainer: {
-    marginLeft: 12,
+    alignSelf: 'flex-end', // Align to the right
+    width: '100%', // Full width for better alignment
   },
   statusBadge: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    minWidth: 120,
+    paddingHorizontal: 12, // Reduced padding
+    paddingVertical: 6,
+    borderRadius: 16, // More rounded
+    alignSelf: 'flex-end', // Align to right side
+    minWidth: 100, // Reduced minimum width
+    maxWidth: 140, // Prevent badge from being too wide
     alignItems: 'center',
   },
   statusText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 14, // Smaller, more readable size
+    fontWeight: '600',
+    textAlign: 'center',
   },
   contentContainer: {
     padding: 16,
+    paddingTop: 12, // Reduced top padding
   },
   detailRow: {
     flexDirection: 'row',
-    marginBottom: 16,
-    alignItems: 'flex-start',
+    marginBottom: 14, // More consistent spacing
+    alignItems: 'flex-start', // Better alignment for multi-line text
   },
   iconContainer: {
-    width: 40,
+    width: 32,
     alignItems: 'center',
     marginRight: 12,
+    flexShrink: 0,
   },
   detailContent: {
     flex: 1,
+    minWidth: 0, // Allows text to wrap properly
   },
   detailLabel: {
     fontSize: 14,
     color: '#666',
     marginBottom: 4,
+    fontWeight: '500',
   },
   detailText: {
     fontSize: 16,
     color: '#1f2937',
-    lineHeight: 24,
+    lineHeight: 22, // Improved line spacing
+    flexWrap: 'wrap',
   },
   actionButtonsContainer: {
     flexDirection: 'row',

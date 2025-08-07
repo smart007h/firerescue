@@ -9,25 +9,27 @@ const Slide = ({ item, index, currentIndex, onGetStarted }) => {
   return (
     <View style={[styles.slideContainer, { opacity: isActive ? 1 : 0.7 }]}>
       <View style={styles.slide}>
-        <View style={styles.imageContainer}>
-          <Image 
-            source={item.image}
-            style={styles.image}
-            resizeMode="cover"
-          />
-          <View style={styles.overlay} />
-        </View>
-        <View style={styles.contentContainer}>
-          <Text style={styles.title}>{item.title}</Text>
-          <Text style={styles.description}>{item.description}</Text>
-          {item.isLast && (
-            <TouchableOpacity 
-              style={styles.button}
-              onPress={onGetStarted}
-            >
-              <Text style={styles.buttonText}>Get Started</Text>
-            </TouchableOpacity>
-          )}
+        <View style={styles.slideContent}>
+          <View style={styles.imageContainer}>
+            <Image 
+              source={item.image}
+              style={styles.image}
+              resizeMode="cover"
+            />
+            <View style={styles.overlay} />
+          </View>
+          <View style={styles.contentContainer}>
+            <Text style={styles.title}>{item.title}</Text>
+            <Text style={styles.description}>{item.description}</Text>
+            {item.isLast && (
+              <TouchableOpacity 
+                style={styles.button}
+                onPress={onGetStarted}
+              >
+                <Text style={styles.buttonText}>Get Started</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </View>
     </View>
@@ -44,7 +46,6 @@ const styles = StyleSheet.create({
   slide: {
     flex: 1,
     borderRadius: 25,
-    overflow: 'hidden',
     backgroundColor: '#fff',
     elevation: 5,
     shadowColor: '#000',
@@ -54,6 +55,11 @@ const styles = StyleSheet.create({
     },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
+  },
+  slideContent: {
+    flex: 1,
+    borderRadius: 25,
+    overflow: 'hidden',
   },
   imageContainer: {
     height: '70%',

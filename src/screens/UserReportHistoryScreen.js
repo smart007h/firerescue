@@ -152,7 +152,11 @@ const UserReportHistoryScreen = () => {
         (data || []).map(async (report) => {
           let locationAddress = 'Location not available';
           
-          if (report.location) {
+          // First, try to use the stored location_address if it exists
+          if (report.location_address) {
+            locationAddress = report.location_address;
+          } else if (report.location) {
+            // Fall back to reverse geocoding if location_address is missing
             try {
               const [lat, lng] = report.location.split(',').map(Number);
               if (!isNaN(lat) && !isNaN(lng)) {
@@ -326,10 +330,12 @@ const UserReportHistoryScreen = () => {
                   style={[
                     styles.actionButton,
                     styles.chatButton,
-                    !item.dispatcher_id && styles.disabledButton
+                    (!item.dispatcher_id || item.status === 'resolved' || item.status === 'cancelled') && styles.disabledButton
                   ]}
                   onPress={() => {
-                    if (item.dispatcher_id) {
+                    if (item.status === 'resolved' || item.status === 'cancelled') {
+                      Alert.alert('Chat Not Available', 'Chat is no longer available for resolved or cancelled incidents. You can only view details.');
+                    } else if (item.dispatcher_id) {
                       navigation.navigate('IncidentChat', { 
                         incidentId: item.id,
                         returnTo: 'UserReportHistory'
@@ -338,7 +344,7 @@ const UserReportHistoryScreen = () => {
                       Alert.alert('Chat Not Available', 'Chat will be available once a dispatcher is assigned to this incident.');
                     }
                   }}
-                  disabled={!item.dispatcher_id}
+                  disabled={!item.dispatcher_id || item.status === 'resolved' || item.status === 'cancelled'}
                 >
                   <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
                   <Text style={styles.actionButtonText}>Chat</Text>
@@ -349,10 +355,12 @@ const UserReportHistoryScreen = () => {
                   style={[
                     styles.actionButton,
                     styles.trackButton,
-                    !item.dispatcher_id && styles.disabledButton
+                    (!item.dispatcher_id || item.status === 'resolved' || item.status === 'cancelled') && styles.disabledButton
                   ]}
                   onPress={() => {
-                    if (item.dispatcher_id) {
+                    if (item.status === 'resolved' || item.status === 'cancelled') {
+                      Alert.alert('Tracking Not Available', 'Tracking is no longer available for resolved or cancelled incidents. You can only view details.');
+                    } else if (item.dispatcher_id) {
                       navigation.navigate('CivilianTrackingScreen', { 
                         incidentId: item.id,
                         incident: item,
@@ -362,7 +370,7 @@ const UserReportHistoryScreen = () => {
                       Alert.alert('Tracking Not Available', 'Tracking will be available once a dispatcher is assigned to this incident.');
                     }
                   }}
-                  disabled={!item.dispatcher_id}
+                  disabled={!item.dispatcher_id || item.status === 'resolved' || item.status === 'cancelled'}
                 >
                   <Ionicons name="location" size={20} color="#fff" />
                   <Text style={styles.actionButtonText}>Track</Text>

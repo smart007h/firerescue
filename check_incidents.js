@@ -1,7 +1,13 @@
 const { createClient } = require('@supabase/supabase-js');
 
-const supabaseUrl = 'https://lssxyhpwcvdzvnxabqwa.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxzc3h5aHB3Y3Zkem5ueGFicXdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzY3ODYxNjMsImV4cCI6MjA1MjM2MjE2M30.4EBHVkGKlY6CZrq8rqPvNZ1y9fqI_PXGPPcJD_XwO50';
+// Use environment variables for security
+const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error('❌ Missing required environment variables: SUPABASE_URL and SUPABASE_ANON_KEY');
+  process.exit(1);
+}
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function checkIncidents() {

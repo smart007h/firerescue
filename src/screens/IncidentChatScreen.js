@@ -27,19 +27,66 @@ const IncidentChatScreen = () => {
   const flatListRef = useRef(null);
   const [incident, setIncident] = useState(null);
   const [otherParticipant, setOtherParticipant] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
-  // Use AuthContext
-  const { user: currentUser, loading: authLoading } = useAuth();
+  // Get current user from either AuthContext (dispatchers) or Supabase auth (civilians)
+  const { user: authContextUser, loading: contextLoading } = useAuth();
+
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      try {
+        setAuthLoading(true);
+        
+        // First, try to get user from AuthContext (for dispatchers)
+        if (authContextUser && !contextLoading) {
+          setCurrentUser(authContextUser);
+          setAuthLoading(false);
+          return;
+        }
+        
+        // If no AuthContext user, try Supabase auth (for civilians)
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (!error && user) {
+          setCurrentUser(user);
+        } else {
+          console.log('No authenticated user found');
+          setCurrentUser(null);
+        }
+      } catch (error) {
+        console.error('Error getting current user:', error);
+        setCurrentUser(null);
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+
+    getCurrentUser();
+  }, [authContextUser, contextLoading]);
+
   const isAuthenticated = !!currentUser;
 
   // Only allow chat for reporter or assigned dispatcher
   let notAllowedReason = '';
-  const isIncidentParticipant = !!currentUser && !!incident &&
-    (currentUser.id === incident.reported_by || currentUser.id === incident.dispatcher_id);
+  
+  // Get the user ID safely (handle both dispatcher and civilian user structures)
+  const getUserId = (user) => {
+    if (!user) return null;
+    // For dispatchers (AuthContext), use id directly
+    // For civilians (Supabase auth), use id
+    return user.id;
+  };
+
+  const currentUserId = getUserId(currentUser);
+  const isIncidentParticipant = !!currentUserId && !!incident &&
+    (currentUserId === incident.reported_by || currentUserId === incident.dispatcher_id);
+    
   if (!isAuthenticated) {
     notAllowedReason = 'You are not logged in.';
   } else if (!!currentUser && !!incident) {
-    if (currentUser.id !== incident.reported_by && currentUser.id !== incident.dispatcher_id) {
+    if (incident.status === 'resolved' || incident.status === 'cancelled') {
+      notAllowedReason = 'This incident has been resolved or cancelled. Chat is no longer available.';
+    } else if (currentUserId !== incident.reported_by && currentUserId !== incident.dispatcher_id) {
       notAllowedReason = 'You are not allowed to participate in this chat because you are neither the reporter nor the assigned dispatcher for this incident.';
     } else if (!incident.dispatcher_id) {
       notAllowedReason = 'No dispatcher has been assigned to this incident yet.';
@@ -124,7 +171,7 @@ const IncidentChatScreen = () => {
         const { data: profileById, error: profileCheckError } = await supabase
           .from('profiles')
           .select('id')
-          .eq('id', currentUser.id)
+          .eq('id', currentUserId)
           .maybeSingle();
 
         if (profileCheckError && profileCheckError.code !== 'PGRST116') {
@@ -148,11 +195,11 @@ const IncidentChatScreen = () => {
           existingProfile = profileByEmail;
 
           // If profile exists with different ID, update it to use the current user's ID
-          if (existingProfile && existingProfile.id !== currentUser.id) {
+          if (existingProfile && existingProfile.id !== currentUserId) {
             const { error: updateError } = await supabase
               .from('profiles')
               .update({
-                id: currentUser.id,
+                id: currentUserId,
                 full_name: currentUser.user_metadata?.full_name || currentUser.email,
                 phone: currentUser.user_metadata?.phone,
               })
@@ -171,7 +218,7 @@ const IncidentChatScreen = () => {
           const { error: profileError } = await supabase
             .from('profiles')
             .insert({
-              id: currentUser.id,
+              id: currentUserId,
               email: currentUser.email,
               full_name: currentUser.user_metadata?.full_name || currentUser.email,
               phone: currentUser.user_metadata?.phone,
@@ -192,7 +239,7 @@ const IncidentChatScreen = () => {
         .from('chat_messages')
         .insert({
           incident_id: incidentId,
-          sender_id: currentUser.id,
+          sender_id: currentUserId,
           message: newMessage.trim(),
           created_at: new Date().toISOString(),
         });
@@ -238,8 +285,10 @@ const IncidentChatScreen = () => {
   }
 
   const renderMessage = ({ item }) => {
-    const isCurrentUser = item.sender_id === currentUser?.id;
-    const roleLabel = isCurrentUser ? 'You' : (item.sender?.role === 'dispatcher' ? 'Dispatcher' : item.sender?.role === 'user' ? 'User' : '');
+    const isCurrentUser = item.sender_id === currentUserId;
+    // Determine role label: Check if sender is dispatcher by comparing with incident's dispatcher_id
+    const isDispatcher = item.sender_id === incident?.dispatcher_id;
+    const roleLabel = isCurrentUser ? 'You' : (isDispatcher ? 'Dispatcher' : 'User');
     return (
       <View style={[
         styles.messageContainer,
@@ -251,7 +300,7 @@ const IncidentChatScreen = () => {
               {item.sender?.full_name || item.sender?.email || 'Unknown User'}
             </Text>
           )}
-          <View style={[styles.roleBadge, isCurrentUser ? styles.roleBadgeYou : item.sender?.role === 'dispatcher' ? styles.roleBadgeDispatcher : styles.roleBadgeUser]}>
+          <View style={[styles.roleBadge, isCurrentUser ? styles.roleBadgeYou : isDispatcher ? styles.roleBadgeDispatcher : styles.roleBadgeUser]}>
             <Text style={styles.roleBadgeText}>{roleLabel}</Text>
           </View>
         </View>

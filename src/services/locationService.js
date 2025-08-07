@@ -5,8 +5,19 @@ import Constants from 'expo-constants';
 // Get the API key from Expo Constants or environment variables
 const GOOGLE_MAPS_API_KEY = Constants.expoConfig?.extra?.googleMapsApiKey || 
                            Constants.manifest?.extra?.googleMapsApiKey ||
-                           process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
-                           'AIzaSyDecKTDi_jgxfzi6ZFuFL3SPXdfgcr26Ps'; // Fallback to the key from .env
+                           process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+// Check if Google Maps API key is available
+const hasGoogleMapsKey = GOOGLE_MAPS_API_KEY && GOOGLE_MAPS_API_KEY !== 'your_google_maps_api_key';
+
+if (!hasGoogleMapsKey) {
+  console.warn('Google Maps API key not found. Using fallback location services.');
+  console.log('Debug - API Key value:', GOOGLE_MAPS_API_KEY);
+  console.log('Debug - expoConfig.extra:', Constants.expoConfig?.extra);
+  console.log('Debug - process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY:', process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY);
+} else {
+  console.log('✅ Google Maps API key loaded successfully');
+}
 
 export const getCurrentLocation = async () => {
   try {
@@ -66,9 +77,31 @@ export const getAddressFromCoordinates = async (latitude, longitude) => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
       console.warn('Location permission denied, falling back to coordinates display');
-      return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+      return `Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
     }
     
+    // Try Google Maps API first if available
+    if (hasGoogleMapsKey) {
+      try {
+        const response = await fetch(
+          `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_MAPS_API_KEY}&region=gh`,
+          { timeout: 5000 }
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.status === 'OK' && data.results && data.results.length > 0) {
+            const address = data.results[0].formatted_address;
+            console.log(`Google Maps address found: ${address}`);
+            return address;
+          }
+        }
+      } catch (googleError) {
+        console.warn('Google Maps geocoding failed:', googleError.message);
+      }
+    }
+    
+    // Fall back to Expo Location reverse geocoding
     try {
       const [address] = await Location.reverseGeocodeAsync({
         latitude,
@@ -83,23 +116,31 @@ export const getAddressFromCoordinates = async (latitude, longitude) => {
           address.country
         ].filter(Boolean).join(', ');
         
-        console.log(`Address found: ${formattedAddress}`);
-        return formattedAddress || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+        if (formattedAddress) {
+          console.log(`Expo reverse geocoding address found: ${formattedAddress}`);
+          return formattedAddress;
+        }
       }
     } catch (reverseGeocodeError) {
-      console.warn('Reverse geocoding failed:', reverseGeocodeError.message);
+      console.warn('Expo reverse geocoding failed:', reverseGeocodeError.message);
     }
 
-    // Fallback to coordinate display
-    return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+    // Final fallback to coordinates with better formatting
+    const coordinateString = `Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+    console.log(`Using coordinate fallback: ${coordinateString}`);
+    return coordinateString;
   } catch (error) {
     console.error('Error getting address from coordinates:', error);
-    return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+    return `Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
   }
 };
 
 export const searchLocationByAddress = async (address) => {
   try {
+    if (!hasGoogleMapsKey) {
+      throw new Error('Google Maps API key not configured. Please add EXPO_PUBLIC_GOOGLE_MAPS_API_KEY to your .env file');
+    }
+
     const searchQuery = address.toLowerCase().includes('ghana') 
       ? address 
       : `${address}, Ghana`;

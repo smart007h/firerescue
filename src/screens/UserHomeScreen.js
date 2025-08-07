@@ -518,10 +518,7 @@ const UserHomeScreen = () => {
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {/* Location Status */}
         <View style={styles.locationStatusContainer}>
-          <TouchableOpacity
-            style={styles.locationButton}
-            onPress={() => setShowLocationModal(true)}
-          >
+          <View style={styles.locationButton}>
             <Ionicons 
               name={userLocation ? "location" : "location-outline"} 
               size={20} 
@@ -530,7 +527,7 @@ const UserHomeScreen = () => {
             <Text style={[styles.locationText, userLocation && styles.locationActive]}>
               Current Location
             </Text>
-          </TouchableOpacity>
+          </View>
           {userLocation && selectedLocation && selectedLocation.address && (
             <Text style={styles.locationSubtext}>{selectedLocation.address}</Text>
           )}

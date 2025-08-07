@@ -231,17 +231,29 @@ export default function ReportIncidentScreen() {
 
   const getAddressFromGoogle = async (latitude, longitude) => {
     const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+    
+    if (!apiKey) {
+      console.warn('Google Maps API key not found');
+      return `Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+    }
+    
     const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`;
     try {
+      console.log('Calling Google Geocoding API for address...');
       const response = await fetch(url);
       const data = await response.json();
+      
       if (data.status === 'OK' && data.results.length > 0) {
-        return data.results[0].formatted_address;
+        const address = data.results[0].formatted_address;
+        console.log('Google Geocoding successful:', address);
+        return address;
+      } else {
+        console.warn('Google Geocoding failed:', data.status, data.error_message);
+        return `Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
       }
-      return 'Location selected';
     } catch (error) {
       console.error('Google Geocoding API error:', error);
-      return 'Location selected';
+      return `Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
     }
   };
 
@@ -294,8 +306,8 @@ export default function ReportIncidentScreen() {
         }
       }));
 
-      // Set the formatted address
-      setLocationAddress(formattedAddress || 'Location selected');
+      // Set the formatted address with better fallback
+      setLocationAddress(formattedAddress || `Coordinates: ${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)}`);
 
       // Find nearest station
       await findNearestStationLocal(location.coords.latitude, location.coords.longitude);
@@ -337,7 +349,7 @@ export default function ReportIncidentScreen() {
           longitude: location.coords.longitude 
         },
       });
-      setLocationAddress(formattedAddress || 'Location selected');
+      setLocationAddress(formattedAddress || `Coordinates: ${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)}`);
 
       // Find nearest station
       console.log('Finding nearest station...');
@@ -757,6 +769,9 @@ export default function ReportIncidentScreen() {
           incident_type: formData.incidentType,
           description: formData.description,
           location: `${formData.location.latitude},${formData.location.longitude}`,
+          location_address: locationAddress || 'Location not available',
+          latitude: formData.location.latitude,
+          longitude: formData.location.longitude,
           coordinates: formData.coordinates,
           status: 'pending',
           media_urls: [],

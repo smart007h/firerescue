@@ -47,6 +47,10 @@ const DispatcherDashboard = () => {
           },
           (payload) => {
             console.log('Real-time incident update received:', payload);
+            console.log('Event type:', payload.eventType);
+            console.log('Old status:', payload.old?.status);
+            console.log('New status:', payload.new?.status);
+            
             // Refresh the incidents list when any change occurs
             fetchActiveIncidents();
           }
@@ -175,39 +179,6 @@ const DispatcherDashboard = () => {
         fetchActiveIncidents();
       }
     });
-  };
-
-  const handleResolveIncident = async (incident) => {
-    Alert.alert(
-      'Resolve Incident',
-      `Are you sure you want to mark this incident as resolved?\n\nType: ${incident.incident_type || 'Unknown'}\nLocation: ${incident.formattedLocation || incident.location}`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Resolve',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from('incidents')
-                .update({ 
-                  status: 'resolved',
-                  updated_at: new Date().toISOString()
-                })
-                .eq('id', incident.id);
-
-              if (error) throw error;
-
-              Alert.alert('Success', 'Incident has been resolved and will be removed from active list');
-              fetchActiveIncidents(); // Refresh the list
-            } catch (error) {
-              console.error('Error resolving incident:', error);
-              Alert.alert('Error', 'Failed to resolve incident. Please try again.');
-            }
-          }
-        }
-      ]
-    );
   };
 
   const handleTrackIncident = () => {
@@ -358,13 +329,6 @@ const DispatcherDashboard = () => {
                       onPress={() => handleViewIncident(incident)}
                     >
                       <Text style={styles.actionButtonText}>Track</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.resolveButton]}
-                      onPress={() => handleResolveIncident(incident)}
-                    >
-                      <Text style={styles.actionButtonText}>Resolve</Text>
                     </TouchableOpacity>
                   </View>
                 </TouchableOpacity>
@@ -540,9 +504,6 @@ const styles = StyleSheet.create({
   },
   trackButton: {
     backgroundColor: '#007AFF',
-  },
-  resolveButton: {
-    backgroundColor: '#34C759',
   },
   actionButtonText: {
     color: '#FFFFFF',

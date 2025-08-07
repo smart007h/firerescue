@@ -11,8 +11,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { getAddressFromCoordinates } from '../services/locationService';
 
-const SUPABASE_FUNCTION_URL = 'https://agpxjkmubrrtkxfhjmjm.supabase.co/functions/v1/assign-incident';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFncHhqa211YnJydGt4ZmhqbWptIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIzMDQxMjMsImV4cCI6MjA1Nzg4MDEyM30.Lo5yTS9q05WZqifn9Y-z-dau3oCs24S1qgCuHtVFMqM';
+const SUPABASE_FUNCTION_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/assign-incident`;
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
 const FirefighterHomeScreen = ({ navigation }) => {
@@ -1240,12 +1240,9 @@ const styles = StyleSheet.create({
   emergencyCard: {
     marginBottom: 16,
     borderRadius: 12,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
     backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
   emergencyHeader: {
     flexDirection: 'row',
@@ -1280,11 +1277,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
   },
   statusText: {
     fontSize: 12,
@@ -1465,12 +1459,9 @@ const styles = StyleSheet.create({
   incidentCard: {
     marginBottom: 16,
     borderRadius: 12,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
     backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
   incidentHeader: {
     flexDirection: 'row',
@@ -1493,11 +1484,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
   },
   statusText: {
     fontSize: 12,
@@ -1714,7 +1702,8 @@ const styles = StyleSheet.create({
   },
   callCard: {
     marginBottom: 16,
-    elevation: 2
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
   callHeader: {
     flexDirection: 'row',

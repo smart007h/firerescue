@@ -99,7 +99,9 @@ export default function CivilianTrackingScreen() {
   };
 
   const handleOpenChat = () => {
-    if (incidentData?.dispatcher_id) {
+    if (incidentData?.status === 'resolved' || incidentData?.status === 'cancelled') {
+      Alert.alert('Chat Not Available', 'Chat is no longer available for resolved or cancelled incidents. You can only view details.');
+    } else if (incidentData?.dispatcher_id) {
       navigation.navigate('IncidentChat', { 
         incidentId,
         returnTo: 'CivilianTrackingScreen',
@@ -222,11 +224,17 @@ export default function CivilianTrackingScreen() {
             )}
 
             <TouchableOpacity
-              style={styles.chatButton}
+              style={[
+                styles.chatButton,
+                (currentIncident?.status === 'resolved' || currentIncident?.status === 'cancelled') && styles.disabledButton
+              ]}
               onPress={handleOpenChat}
+              disabled={currentIncident?.status === 'resolved' || currentIncident?.status === 'cancelled'}
             >
               <Ionicons name="chatbubble-ellipses" size={20} color="#fff" />
-              <Text style={styles.chatButtonText}>Chat with Dispatcher</Text>
+              <Text style={styles.chatButtonText}>
+                {(currentIncident?.status === 'resolved' || currentIncident?.status === 'cancelled') ? 'Chat Closed' : 'Chat with Dispatcher'}
+              </Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -359,5 +367,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  disabledButton: {
+    backgroundColor: '#9ca3af',
+    opacity: 0.6,
   },
 });

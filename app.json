@@ -5,6 +5,9 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "extra": {
+      "googleMapsApiKey": "${EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}"
+    },
     "splash": {
       "image": "./src/assets/splash.png",
       "resizeMode": "contain",
@@ -18,6 +21,9 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.firerescue.app",
+      "config": {
+        "googleMapsApiKey": "${EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}"
+      },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app needs access to location to find the nearest fire station and provide accurate incident reporting.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs access to location to find the nearest fire station and provide accurate incident reporting."

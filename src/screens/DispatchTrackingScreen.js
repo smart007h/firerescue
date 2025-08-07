@@ -6,7 +6,7 @@ const { Marker, Polyline, PROVIDER_GOOGLE } = require('react-native-maps');
 const { useRoute, useNavigation } = require('@react-navigation/native');
 const { supabase } = require('../config/supabaseClient');
 const { Ionicons } = require('@expo/vector-icons');
-const { Audio } = require('expo-av');
+const { Audio } = require('expo-audio');
 
 function DispatchTrackingScreen() {
   const route = useRoute();
@@ -289,15 +289,23 @@ function DispatchTrackingScreen() {
   }, [incidentId]);
 
   useEffect(() => {
-    // Load notification sound
+    // Load notification sound using new expo-audio API
     (async () => {
-      notificationSound.current = new Audio.Sound();
       try {
-        await notificationSound.current.loadAsync(require('../assets/sounds/notification.mp3.wav'));
-      } catch (e) { /* handle error */ }
+        // Create and load audio using the new expo-audio API
+        const { sound } = await Audio.createAsync(
+          require('../assets/sounds/notification.mp3.wav'),
+          { shouldPlay: false }
+        );
+        notificationSound.current = sound;
+      } catch (e) { 
+        console.warn('Could not load notification sound:', e);
+      }
     })();
     return () => {
-      if (notificationSound.current) notificationSound.current.unloadAsync();
+      if (notificationSound.current) {
+        notificationSound.current.unloadAsync();
+      }
     };
   }, []);
 
