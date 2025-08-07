@@ -56,8 +56,8 @@ const FirefighterIncidentDetailsScreen = ({ route, navigation }) => {
         setReporter(reporterData);
       }
 
-      // Load dispatcher details if assigned
-      if (incidentData.dispatcher_id) {
+      // Load dispatcher details if assigned and incident is active (not resolved)
+      if (incidentData.dispatcher_id && incidentData.status !== 'resolved' && incidentData.status !== 'cancelled') {
         const { data: dispatcherData } = await supabase
           .from('dispatchers')
           .select('full_name, phone_number')
@@ -313,8 +313,8 @@ const FirefighterIncidentDetailsScreen = ({ route, navigation }) => {
           </View>
         )}
 
-        {/* Dispatcher Information */}
-        {dispatcher && (
+        {/* Dispatcher Information - only shown for active incidents */}
+        {dispatcher && incident.status !== 'resolved' && incident.status !== 'cancelled' && (
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Assigned Dispatcher</Text>
             <View style={styles.dispatcherInfo}>

@@ -34,4 +34,15 @@ yarn-error.*
 # local env files
 .env*.local
 
+# temporary debugging/diagnostic scripts
+debug_*.js
+check_*.js
+test_*.js
+verify_*.js
+fix_*.js
+sync_*.js
+*_debug.js
+*_test.js
+*_check.js
+
 app-example

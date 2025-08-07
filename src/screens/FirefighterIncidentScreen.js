@@ -426,8 +426,8 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
         );
       }
 
-      // Fetch dispatcher details if needed
-      if (incidentData.dispatcher_id) {
+      // Fetch dispatcher details if assigned and incident is active (not resolved)
+      if (incidentData.dispatcher_id && incidentData.status !== 'resolved' && incidentData.status !== 'cancelled') {
         parallelTasks.push(
           supabase
             .from('dispatchers')
@@ -1153,7 +1153,7 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
               </View>
             )}
 
-            {dispatcher && (
+            {dispatcher && incident.status !== 'resolved' && incident.status !== 'cancelled' && (
               <View style={styles.reporterSection}>
                 <Text style={styles.reporterTitle}>Assigned Dispatcher</Text>
                 <Text style={styles.reporterName}>{dispatcher.name || 'N/A'}</Text>
