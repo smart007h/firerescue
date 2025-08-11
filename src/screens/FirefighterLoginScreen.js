@@ -26,7 +26,7 @@ export default function FirefighterLoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const navigation = useNavigation();
-  const { setUserRole } = useAuth();
+  const { setUserRole, markAppRefresh } = useAuth();
 
   const checkDatabase = async () => {
     try {
@@ -73,8 +73,20 @@ export default function FirefighterLoginScreen() {
       if (sessionStr) {
         const session = JSON.parse(sessionStr);
         
-        // Check if session is still valid
-        if (session.expires_at * 1000 > Date.now()) {
+        // Check if session is still valid (handle both timestamp formats)
+        const expiresAt = typeof session.expires_at === 'string' 
+          ? new Date(session.expires_at).getTime() 
+          : session.expires_at * 1000;
+          
+        const now = Date.now();
+        const lastActivity = await AsyncStorage.getItem('lastActivityTime');
+        const lastActivityTime = lastActivity ? parseInt(lastActivity) : now;
+        
+        // Check session expiration and inactivity (2 hours)
+        const isExpired = expiresAt < now;
+        const isInactive = (now - lastActivityTime) > (2 * 60 * 60 * 1000); // 2 hours
+        
+        if (!isExpired && !isInactive) {
           // Check if station data exists
           const stationDataStr = await AsyncStorage.getItem('stationData');
           if (stationDataStr) {
@@ -90,6 +102,8 @@ export default function FirefighterLoginScreen() {
 
             if (!error && stations) {
               console.log('Valid session found, navigating to home');
+              // Update last activity
+              await AsyncStorage.setItem('lastActivityTime', now.toString());
               // Store stationId if it's not already stored
               if (!await AsyncStorage.getItem('stationId')) {
                 await AsyncStorage.setItem('stationId', stationData.station_id);
@@ -206,18 +220,24 @@ export default function FirefighterLoginScreen() {
       await AsyncStorage.setItem('stationId', data.station_id);
       await AsyncStorage.setItem('userRole', 'firefighter');
 
-      // Create a custom session object
+      // Create a session with proper expiration (12 hours instead of 7 days)
       const session = {
         station_id: data.station_id,
         station_name: data.station_name,
-        access_token: 'firefighter_token', // This is a placeholder
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
+        access_token: 'firefighter_token',
+        expires_at: Math.floor((Date.now() + 12 * 60 * 60 * 1000) / 1000), // 12 hours from now in seconds
+        created_at: new Date().toISOString(),
+        role: 'firefighter'
       };
 
       await AsyncStorage.setItem('supabase-session', JSON.stringify(session));
+      await AsyncStorage.setItem('lastActivityTime', Date.now().toString());
 
       console.log('Login successful!');
       console.log('Station details:', data);
+
+      // Mark that we're setting up a session (for future app refreshes)
+      await markAppRefresh();
 
       // Set session and userRole, then let AuthContext/AppNavigator handle navigation
       // Do not navigate here

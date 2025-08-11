@@ -101,9 +101,21 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
     try {
       setLoading(true);
       await supabase.auth.getSession();
+      
+      // Prepare update data
+      const updateData = { 
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      };
+      
+      // Add resolved_at timestamp if resolving
+      if (newStatus === 'resolved') {
+        updateData.resolved_at = new Date().toISOString();
+      }
+      
       const { error } = await supabase
         .from('incidents')
-        .update({ status: newStatus })
+        .update(updateData)
         .eq('id', incident.id);
 
       if (error) {

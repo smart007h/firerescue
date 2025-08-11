@@ -277,21 +277,6 @@ const DispatchNewIncidentScreen = ({ navigation }) => {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.form}>
-          {/* Debug info - remove in production */}
-          {__DEV__ && (
-            <View style={styles.debugContainer}>
-              <Text style={styles.debugTitle}>Debug Info:</Text>
-              <Text style={styles.debugText}>
-                Incident Type: {formData.incident_type || 'None selected'}
-              </Text>
-              <Text style={styles.debugText}>
-                Station ID: {formData.station_id || 'None selected'}
-              </Text>
-              <Text style={styles.debugText}>
-                Stations loaded: {stations.length}
-              </Text>
-            </View>
-          )}
 
           {/* Incident Type */}
           <View style={styles.formGroup}>

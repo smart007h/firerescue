@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../config/supabaseClient";
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
 import { Picker } from "@react-native-picker/picker";
@@ -43,7 +44,7 @@ const DispatcherDashboard = () => {
             event: '*', // Listen to all changes (INSERT, UPDATE, DELETE)
             schema: 'public',
             table: 'incidents',
-            filter: `dispatcher_id=eq.${dispatcherId}`,
+            // Remove filter to listen to all incidents, we'll filter in the callback
           },
           (payload) => {
             console.log('Real-time incident update received:', payload);
@@ -51,8 +52,15 @@ const DispatcherDashboard = () => {
             console.log('Old status:', payload.old?.status);
             console.log('New status:', payload.new?.status);
             
-            // Refresh the incidents list when any change occurs
-            fetchActiveIncidents();
+            // Check if this incident belongs to current dispatcher
+            const incidentDispatcherId = payload.new?.dispatcher_id || payload.old?.dispatcher_id;
+            if (incidentDispatcherId === dispatcherId) {
+              console.log('Incident belongs to current dispatcher, refreshing list');
+              // Add a small delay to ensure database consistency
+              setTimeout(() => {
+                fetchActiveIncidents();
+              }, 500);
+            }
           }
         )
         .subscribe((status) => {
@@ -71,6 +79,13 @@ const DispatcherDashboard = () => {
       if (cleanup) cleanup.then(fn => fn && fn());
     };
   }, []);
+
+  // Refresh dashboard when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchActiveIncidents();
+    }, [])
+  );
 
   const fetchActiveIncidents = async () => {
     setRefreshing(true);

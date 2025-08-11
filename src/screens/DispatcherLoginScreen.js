@@ -24,7 +24,7 @@ const DispatcherLoginScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(null);
-  const { updateDispatcherAuth } = useAuth();
+  const { updateDispatcherAuth, markAppRefresh } = useAuth();
 
   // Debug: Log Supabase session on app start
   useEffect(() => {
@@ -79,6 +79,9 @@ const DispatcherLoginScreen = ({ navigation }) => {
       // 3. Update the AuthContext with dispatcher data
       await updateDispatcherAuth(dispatcherData);
       console.log('After updateDispatcherAuth');
+
+      // Mark that we're setting up a session (for future app refreshes)
+      await markAppRefresh();
 
       // 4. Store dispatcher data in AsyncStorage (required for auth flow)
       await AsyncStorage.setItem('dispatcherData', JSON.stringify(dispatcherData));

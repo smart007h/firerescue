@@ -107,27 +107,6 @@ const IncidentChatScreen = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, isAuthenticated, incident, isIncidentParticipant]);
 
-  // Debug: log user and incident info for troubleshooting chat access (only for errors)
-  useEffect(() => {
-    if (__DEV__ && (!isAuthenticated || !isIncidentParticipant || notAllowedReason)) {
-      console.log('IncidentChatScreen access issue:', {
-        isAuthenticated,
-        isIncidentParticipant,
-        notAllowedReason,
-      });
-    }
-  }, [isAuthenticated, isIncidentParticipant, notAllowedReason]);
-
-  // Debug: log route params, session, and user info on mount
-  useEffect(() => {
-    if (__DEV__) {
-      console.log('IncidentChatScreen route.params:', route.params);
-      supabase.auth.getSession().then((sessionRes) => {
-        console.log('Supabase getSession:', sessionRes);
-      });
-    }
-  }, []);
-
   const loadMessages = async () => {
     try {
       setLoading(true);
@@ -447,15 +426,6 @@ const IncidentChatScreen = () => {
           <Text style={{ color: '#666', fontSize: 12, marginTop: 8 }}>
             If you believe this is an error, please check that you are logged in as the correct user or dispatcher, and that the dispatcher is assigned to this incident.
           </Text>
-          {__DEV__ && (
-            <View style={{ marginTop: 12, backgroundColor: '#f8f9fa', padding: 8, borderRadius: 8 }}>
-              <Text style={{ fontSize: 12, color: '#333' }}>Debug Info:</Text>
-              <Text style={{ fontSize: 12, color: '#333' }}>Route Params: {JSON.stringify(route.params)}</Text>
-              <Text style={{ fontSize: 12, color: '#333' }}>Current User: {currentUser?.id}</Text>
-              <Text style={{ fontSize: 12, color: '#333' }}>Incident Reporter: {incident?.reported_by}</Text>
-              <Text style={{ fontSize: 12, color: '#333' }}>Incident Dispatcher: {incident?.dispatcher_id}</Text>
-            </View>
-          )}
         </View>
       )}
     </SafeAreaView>

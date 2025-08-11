@@ -12,6 +12,8 @@ import { StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './src/config/supabaseClient';
 import { AuthProvider } from './src/context/AuthContext';
+import ActivityTracker from './src/components/ActivityTracker';
+import InactivityWarning from './src/components/InactivityWarning';
 
 // Import your navigation and other components
 import AppNavigator from './src/navigation/AppNavigator';
@@ -92,7 +94,10 @@ export default function App() {
                 AsyncStorage.setItem(PERSISTENCE_KEY, JSON.stringify(state))
               }
             >
-              <AppNavigator key={refreshKey} />
+              <ActivityTracker>
+                <AppNavigator key={refreshKey} />
+                <InactivityWarning />
+              </ActivityTracker>
               <StatusBar style="auto" />
             </NavigationContainer>
           </RefreshContext.Provider>

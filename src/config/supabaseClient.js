@@ -14,5 +14,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    // Set shorter session timeout
+    expires: 60 * 60 * 24, // 24 hours instead of default 7 days
   },
 });

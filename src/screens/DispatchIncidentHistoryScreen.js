@@ -143,7 +143,13 @@ const DispatchIncidentHistoryScreen = ({ navigation }) => {
   }, [filter]);
 
   const handleViewIncident = (incident) => {
-    navigation.navigate('DispatchIncidentDetailsScreen', { incident });
+    navigation.navigate('DispatchIncidentDetailsScreen', { 
+      incident,
+      onStatusChange: () => {
+        // Refresh the incidents list when status changes
+        loadIncidents();
+      }
+    });
   };
 
   const getPriorityColor = (priority) => {

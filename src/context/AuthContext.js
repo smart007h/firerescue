@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect, useContext, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../config/supabaseClient';
+import { validateAndRefreshSession, updateLastActivity, clearAllSessions } from '../utils/sessionManager';
 
 const AuthContext = createContext();
 
@@ -10,6 +11,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState(null);
   const [authHydrated, setAuthHydrated] = useState(false); // NEW: track if auth is hydrated
+  const [freshLaunch, setFreshLaunch] = useState(true); // NEW: track if this is a fresh app launch
   const signOutCalledRef = useRef(false);
 
   // Check for dispatcher authentication from AsyncStorage
@@ -17,6 +19,17 @@ export const AuthProvider = ({ children }) => {
     try {
       const role = await AsyncStorage.getItem('userRole');
       if (role === 'dispatcher') {
+        // Validate session first
+        const session = await validateAndRefreshSession('dispatcher');
+        if (!session) {
+          // Session expired, clear dispatcher data
+          await AsyncStorage.removeItem('dispatcherData');
+          await AsyncStorage.removeItem('userRole');
+          await AsyncStorage.removeItem('userId');
+          await AsyncStorage.removeItem('userEmail');
+          return false;
+        }
+
         const dispatcherDataStr = await AsyncStorage.getItem('dispatcherData');
         if (dispatcherDataStr) {
           const dispatcherData = JSON.parse(dispatcherDataStr);
@@ -30,6 +43,9 @@ export const AuthProvider = ({ children }) => {
             .maybeSingle();
 
           if (!error && currentDispatcher) {
+            // Update last activity
+            updateLastActivity();
+            
             // Create a user object that matches the expected format
             const dispatcherUser = {
               id: currentDispatcher.id,
@@ -50,27 +66,30 @@ export const AuthProvider = ({ children }) => {
               // Add any other session fields you need here
             });
             setUserRole('dispatcher');
-            console.log('[AuthContext] isDispatcherAuth:', true);
             return true;
           } else {
             // Clear invalid dispatcher data
-            await AsyncStorage.removeItem('dispatcherData');
-            await AsyncStorage.removeItem('userRole');
-            await AsyncStorage.removeItem('userId');
-            await AsyncStorage.removeItem('userEmail');
+            await clearAllSessions();
           }
         }
       }
       if (role === 'firefighter') {
+        // Validate firefighter session
+        const session = await validateAndRefreshSession('firefighter');
+        if (!session) {
+          await clearAllSessions();
+          return false;
+        }
+        
+        updateLastActivity();
         setUserRole('firefighter');
-        console.log('[AuthContext] isFirefighterAuth: true');
         return true;
       }
       // Only log false if dispatcher role was expected
-      console.log('[AuthContext] isDispatcherAuth: false (dispatcher role in AsyncStorage, but no valid session)');
       return false;
     } catch (error) {
       console.error('Error checking dispatcher auth:', error);
+      await clearAllSessions();
       return false;
     }
   };
@@ -78,12 +97,28 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const initializeAuth = async () => {
       let finished = false;
-      console.log('[AuthContext] initializeAuth called');
       try {
         signOutCalledRef.current = false; // Reset guard on init
+        
+        // Check if this is a fresh launch vs app refresh
+        const isAppRefresh = await AsyncStorage.getItem('app-refresh-flag');
+        
+        if (isAppRefresh) {
+          // This is an app refresh, keep existing auth
+          await AsyncStorage.removeItem('app-refresh-flag');
+          setFreshLaunch(false);
+        } else {
+          // This is a fresh launch, clear all sessions to force re-authentication
+          await clearAllSessions();
+          setFreshLaunch(true);
+          setAuthHydrated(true);
+          setLoading(false);
+          return;
+        }
+        
+        // Only proceed with auto-login if this was an app refresh
         // First check for dispatcher authentication
         const isDispatcherAuth = await checkDispatcherAuth();
-        console.log('[AuthContext] isDispatcherAuth:', isDispatcherAuth);
         if (isDispatcherAuth) {
           setUserRole('dispatcher');
           finished = true;
@@ -96,14 +131,12 @@ export const AuthProvider = ({ children }) => {
           while (retries > 0) {
             const { data } = await supabase.auth.getSession();
             session = data.session;
-            console.log('[AuthContext] Supabase session:', session);
             if (session && session.user) break;
             await new Promise(res => setTimeout(res, 300)); // wait 300ms
             retries--;
           }
           if (session && session.user) {
             setUser(session.user);
-            console.log('[AuthContext] Setting user:', session.user);
             setUserRole('user');
             finished = true;
             setAuthHydrated(true); // NEW: mark hydrated
@@ -126,10 +159,8 @@ export const AuthProvider = ({ children }) => {
       } finally {
         if (!finished) {
           // Defensive: ensure loading is always set to false
-          console.log('[AuthContext] Setting loading false (finally block)');
           setLoading(false);
         } else {
-          console.log('[AuthContext] Setting loading false (early return)');
           setLoading(false);
         }
       }
@@ -140,10 +171,8 @@ export const AuthProvider = ({ children }) => {
     // Listen for auth state changes (only for regular users)
     let lastSessionUserId = null; // NEW: track last session user id
     const { subscription } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[AuthContext] Auth state changed:', event, session ? 'Session exists' : 'No session');
       const currentRole = await AsyncStorage.getItem('userRole');
       if (currentRole !== 'dispatcher' && session == null) {
-        console.log('[AuthContext] onAuthStateChange: No session, calling signOut');
         await signOut();
         setLoading(false);
       } else if (event === 'SIGNED_IN' && session?.user?.id !== lastSessionUserId) {
@@ -153,7 +182,7 @@ export const AuthProvider = ({ children }) => {
         lastSessionUserId = session.user.id;
         setLoading(false);
       } else {
-        console.log('[AuthContext] onAuthStateChange: Session exists or dispatcher, not signing out');
+        // Session exists or dispatcher, not signing out
       }
       setAuthHydrated(true); // Always mark hydrated after any event
     });
@@ -164,9 +193,8 @@ export const AuthProvider = ({ children }) => {
   }, []); // Only run on mount
 
   useEffect(() => {
-    console.log('[AuthContext] userRole changed:', userRole);
     if (userRole === 'firefighter') {
-      console.log('[AuthContext] userRole is firefighter, should show firefighter stack');
+      // Firefighter stack should be shown
     }
   }, [userRole]);
 
@@ -193,10 +221,24 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Function to mark app refresh (for development)
+  const markAppRefresh = async () => {
+    await AsyncStorage.setItem('app-refresh-flag', 'true');
+  };
+
+  // Function to clear refresh flag and force fresh login
+  const forceFreshLogin = async () => {
+    await AsyncStorage.removeItem('app-refresh-flag');
+    await clearAllSessions();
+    setUser(null);
+    setSession(null);
+    setUserRole(null);
+    setFreshLaunch(true);
+  };
+
   // Function to sign out (handles both regular users and dispatchers)
   const signOut = async (fromInit = false) => {
     if (signOutCalledRef.current && !fromInit) {
-      console.log('[AuthContext] signOut: already called, skipping');
       // Still clear state to force UI update
       setUser(null);
       setSession(null);
@@ -205,21 +247,9 @@ export const AuthProvider = ({ children }) => {
       return;
     }
     signOutCalledRef.current = true;
-    console.log('[AuthContext] signOut called', { fromInit });
     try {
-      // Clear all possible user data (dispatchers and regular users)
-      await AsyncStorage.removeItem('dispatcherData');
-      await AsyncStorage.removeItem('stationData');
-      await AsyncStorage.removeItem('stationId');
-      await AsyncStorage.removeItem('userRole');
-      await AsyncStorage.removeItem('userId');
-      await AsyncStorage.removeItem('userEmail');
-      await AsyncStorage.removeItem('userData');
-      await AsyncStorage.removeItem('supabase-session');
-      
-      // Sign out from Supabase
-      await supabase.auth.signOut();
-      console.log('[AuthContext] Signed out from Supabase');
+      // Use centralized session clearing
+      await clearAllSessions();
     } catch (error) {
       console.error('Error signing out:', error);
     } finally {
@@ -228,7 +258,6 @@ export const AuthProvider = ({ children }) => {
       setSession(null);
       setUserRole(null);
       setLoading(false);
-      console.log('[AuthContext] State cleared after signOut');
       
       // Reset the guard after a delay to allow for potential re-initialization
       setTimeout(() => {
@@ -243,8 +272,11 @@ export const AuthProvider = ({ children }) => {
       session, 
       loading: loading || !authHydrated, // NEW: loading is true until hydrated
       userRole,
+      freshLaunch,
       setUserRole,
       updateDispatcherAuth,
+      markAppRefresh,
+      forceFreshLogin,
       signOut
     }}>
       {children}

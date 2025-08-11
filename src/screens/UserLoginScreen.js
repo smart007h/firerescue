@@ -16,7 +16,7 @@ const UserLoginScreen = ({ navigation, route }) => {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const { setUserRole } = useAuth();
+  const { setUserRole, markAppRefresh } = useAuth();
 
   useEffect(() => {
     if (route.params?.message) {
@@ -44,6 +44,10 @@ const UserLoginScreen = ({ navigation, route }) => {
 
       // Set userRole in AsyncStorage
       await AsyncStorage.setItem('userRole', 'user');
+      
+      // Mark that we're setting up a session (for future app refreshes)
+      await markAppRefresh();
+      
       // Immediately update context for navigation
       if (setUserRole) setUserRole('user');
 

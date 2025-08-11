@@ -35,7 +35,7 @@ const WelcomeScreen = ({ navigation, route }) => {
   const scrollViewRef = React.useRef(null);
   const sessionCheckingRef = React.useRef(false); // Prevent multiple simultaneous calls
   const initialRoleRef = React.useRef(null); // Track initial user role
-  const { userRole, loading: authLoading } = useAuth();
+  const { userRole, loading: authLoading, freshLaunch } = useAuth();
 
   // Check if we came from a logout action
   const fromLogout = route?.params?.fromLogout || false;
@@ -49,9 +49,9 @@ const WelcomeScreen = ({ navigation, route }) => {
     return initialRoleRef.current && !userRole && !authLoading;
   }, [userRole, authLoading]);
 
-  const isFromLogout = fromLogout || detectedLogout;
+  const isFromLogout = fromLogout || detectedLogout || freshLaunch;
 
-  // Early return if user already has a role and it's not from logout
+  // Early return if user already has a role and it's not from logout or fresh launch
   // This prevents unnecessary session checking when AppNavigator should handle routing
   if (!isFromLogout && userRole && !authLoading) {
     return (
@@ -64,9 +64,9 @@ const WelcomeScreen = ({ navigation, route }) => {
   }
 
   useEffect(() => {
-    // If we came from logout or detected logout, don't check session - just show welcome screen
+    // If we came from logout, detected logout, or it's a fresh launch, don't check session - just show welcome screen
     if (isFromLogout) {
-      console.log('[WelcomeScreen] Arrived from logout (detected or explicit), showing welcome screen');
+      console.log('[WelcomeScreen] Showing welcome screen due to logout or fresh launch');
       setSessionChecked(true);
       setIsLoading(false);
       return;

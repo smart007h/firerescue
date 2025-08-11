@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, Linking } from 'react-native';
 import { Text, Card, Button, IconButton, Badge, Title, Subheading } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../config/supabaseClient';
 import { getFirefighterDetails } from '../services/authentication';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { FlatList, RefreshControl } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
@@ -36,6 +36,13 @@ const FirefighterHomeScreen = ({ navigation }) => {
     loadEmergencyCalls();
     subscribeToNewCalls();
   }, []);
+
+  // Update stats when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      loadStationStats();
+    }, [])
+  );
 
   const loadStationInfo = async () => {
     try {
@@ -162,12 +169,12 @@ const FirefighterHomeScreen = ({ navigation }) => {
         return;
       }
 
-      // Get active emergencies count
+      // Get active emergencies count (include both pending and in_progress)
       const { count: activeCount, error: activeError } = await supabase
         .from('incidents')
         .select('*', { count: 'exact', head: true })
         .eq('station_id', stationId)
-        .eq('status', 'in_progress');
+        .in('status', ['pending', 'in_progress']);
 
       // Get resolved incidents for today
       const today = new Date();
@@ -223,6 +230,7 @@ const FirefighterHomeScreen = ({ navigation }) => {
         },
         () => {
           loadIncidents();
+          loadStationStats(); // Add this to update stats when incidents change
         }
       )
       .subscribe();
@@ -503,6 +511,7 @@ const FirefighterHomeScreen = ({ navigation }) => {
   const handleRefresh = () => {
     setRefreshing(true);
     loadIncidents();
+    loadStationStats(); // Add this to update stats on refresh
     loadActiveEmergencies(stationInfo?.station_id);
   };
 
