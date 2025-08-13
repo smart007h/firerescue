@@ -479,6 +479,49 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
     }
   };
 
+  const getFallbackDispatcherInfo = async (stationId) => {
+    try {
+      // Try to get dispatcher info for this station/region
+      const { data: station, error: stationError } = await supabase
+        .from('firefighters')
+        .select('station_name, station_region, station_address')
+        .eq('station_id', stationId)
+        .maybeSingle();
+
+      if (stationError) {
+        console.error('Error fetching station info:', stationError);
+        return 'A dispatcher will be assigned shortly.';
+      }
+
+      if (!station) {
+        return 'A dispatcher will be assigned shortly.';
+      }
+
+      // Try to get available dispatchers for this region
+      const { data: dispatchers, error: dispatcherError } = await supabase
+        .from('dispatchers')
+        .select('name, type, role, phone, email, region')
+        .or(`region.ilike.%${station.station_region}%,region.is.null`)
+        .eq('is_active', true)
+        .limit(1);
+
+      if (dispatcherError) {
+        console.error('Error fetching dispatcher info:', dispatcherError);
+        return `Station: ${station.station_name}\nRegion: ${station.station_region}\nA dispatcher will be assigned shortly.`;
+      }
+
+      if (dispatchers && dispatchers.length > 0) {
+        const dispatcher = dispatchers[0];
+        return `Station: ${station.station_name}\nRegion: ${station.station_region}\n\nAvailable Dispatcher:\nName: ${dispatcher.name}\nType: ${dispatcher.type || dispatcher.role || 'Dispatcher'}\nContact: ${dispatcher.phone || dispatcher.email || 'Contact pending'}`;
+      }
+
+      return `Station: ${station.station_name}\nRegion: ${station.station_region}\nA dispatcher will be assigned shortly.`;
+    } catch (error) {
+      console.error('Error in getFallbackDispatcherInfo:', error);
+      return 'A dispatcher will be assigned shortly.';
+    }
+  };
+
   const handleApproveIncident = async (incidentId) => {
     try {
       const isSessionValid = await checkAndRefreshSession();
@@ -534,6 +577,7 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
       // Call the assign-incident Edge Function
       let assignmentSuccess = false;
       let assignmentMessage = '';
+      let assignedDispatcher = null;
       try {
         const response = await fetch(SUPABASE_FUNCTION_URL, {
           method: 'POST',
@@ -549,14 +593,40 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
           })
         });
         const result = await response.json();
+        console.log('Edge Function response:', result);
+        
         if (response.ok && result.assigned_dispatcher) {
           assignmentSuccess = true;
-          assignmentMessage = 'Incident approved and successfully assigned to dispatcher.';
+          assignedDispatcher = result.assigned_dispatcher;
+          
+          // Create detailed message with dispatcher info
+          const dispatcherName = assignedDispatcher.name || 'Unknown Dispatcher';
+          const dispatcherType = assignedDispatcher.type || assignedDispatcher.role || 'Dispatcher';
+          const dispatcherContact = assignedDispatcher.phone || assignedDispatcher.email || 'No contact available';
+          
+          assignmentMessage = `Incident approved and successfully assigned to dispatcher:\n\nName: ${dispatcherName}\nType: ${dispatcherType}\nContact: ${dispatcherContact}`;
+        } else if (response.ok && result.dispatcher) {
+          // Alternative response structure
+          assignmentSuccess = true;
+          assignedDispatcher = result.dispatcher;
+          
+          const dispatcherName = assignedDispatcher.name || 'Unknown Dispatcher';
+          const dispatcherType = assignedDispatcher.type || assignedDispatcher.role || 'Dispatcher';
+          const dispatcherContact = assignedDispatcher.phone || assignedDispatcher.email || 'No contact available';
+          
+          assignmentMessage = `Incident approved and successfully assigned to dispatcher:\n\nName: ${dispatcherName}\nType: ${dispatcherType}\nContact: ${dispatcherContact}`;
         } else {
-          assignmentMessage = result.error ? `Incident approved, but not assigned to dispatcher: ${result.error}` : 'Incident approved, but not assigned to dispatcher.';
+          // If assignment failed, try to get available dispatcher info for this station/region
+          const fallbackMessage = await getFallbackDispatcherInfo(stationId);
+          assignmentMessage = result.error ? 
+            `Incident approved, but assignment failed: ${result.error}\n\n${fallbackMessage}` : 
+            `Incident approved, but dispatcher assignment failed.\n\n${fallbackMessage}`;
         }
       } catch (assignError) {
-        assignmentMessage = 'Incident approved, but failed to assign dispatcher.';
+        console.error('Edge Function error:', assignError);
+        // Try to get fallback dispatcher info
+        const fallbackMessage = await getFallbackDispatcherInfo(stationId);
+        assignmentMessage = `Incident approved, but failed to assign dispatcher due to network error.\n\n${fallbackMessage}`;
       }
       // Show the alert and reload the list after user dismisses
       Alert.alert(
@@ -937,11 +1007,13 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
                   style: {
                     backgroundColor: selectedStatus === 'all' ? '#DC3545' : '#fff',
                     flex: 1,
-                    paddingHorizontal: 8,
+                    paddingHorizontal: 4,
+                    minWidth: 60,
                   },
                   labelStyle: {
                     color: selectedStatus === 'all' ? '#fff' : '#666',
-                    fontSize: 14,
+                    fontSize: 12,
+                    fontWeight: '600',
                     textAlign: 'center',
                   }
                 },
@@ -951,11 +1023,13 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
                   style: {
                     backgroundColor: selectedStatus === 'pending' ? '#DC3545' : '#fff',
                     flex: 1,
-                    paddingHorizontal: 8,
+                    paddingHorizontal: 4,
+                    minWidth: 70,
                   },
                   labelStyle: {
                     color: selectedStatus === 'pending' ? '#fff' : '#666',
-                    fontSize: 14,
+                    fontSize: 12,
+                    fontWeight: '600',
                     textAlign: 'center',
                   }
                 },
@@ -965,11 +1039,13 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
                   style: {
                     backgroundColor: selectedStatus === 'in_progress' ? '#DC3545' : '#fff',
                     flex: 1,
-                    paddingHorizontal: 8,
+                    paddingHorizontal: 4,
+                    minWidth: 75,
                   },
                   labelStyle: {
                     color: selectedStatus === 'in_progress' ? '#fff' : '#666',
-                    fontSize: 14,
+                    fontSize: 12,
+                    fontWeight: '600',
                     textAlign: 'center',
                   }
                 },
@@ -979,11 +1055,13 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
                   style: {
                     backgroundColor: selectedStatus === 'resolved' ? '#DC3545' : '#fff',
                     flex: 1,
-                    paddingHorizontal: 8,
+                    paddingHorizontal: 4,
+                    minWidth: 75,
                   },
                   labelStyle: {
                     color: selectedStatus === 'resolved' ? '#fff' : '#666',
-                    fontSize: 14,
+                    fontSize: 12,
+                    fontWeight: '600',
                     textAlign: 'center',
                   }
                 }
@@ -991,7 +1069,8 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
               style={[styles.statusFilter, { 
                 borderRadius: 8,
                 marginHorizontal: 0,
-                paddingHorizontal: 4,
+                paddingHorizontal: 2,
+                height: 40,
               }]}
               theme={{
                 colors: {
@@ -1001,7 +1080,7 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
                 },
                 roundness: 8,
               }}
-              density="medium"
+              density="small"
               showSelectedCheck={false}
             />
           </View>
@@ -1463,10 +1542,11 @@ const styles = StyleSheet.create({
   segmentedButtonsContainer: {
     width: '100%',
     paddingHorizontal: 0,
+    marginTop: 8,
   },
   statusFilter: {
     backgroundColor: '#fff',
-    marginTop: 8,
+    marginTop: 0,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: {
@@ -1477,8 +1557,10 @@ const styles = StyleSheet.create({
     shadowRadius: 1.41,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 4,
-    paddingHorizontal: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 2,
+    borderRadius: 8,
+    overflow: 'hidden',
   },
   scrollToTopButton: {
     position: 'absolute',

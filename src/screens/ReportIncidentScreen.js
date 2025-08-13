@@ -1328,6 +1328,7 @@ export default function ReportIncidentScreen() {
   const handlePlaceSuggestionSelect = async (suggestion) => {
       setManualLocation(suggestion.description);
     setShowPlaceSuggestions(false);
+    setPlaceSuggestions([]);
     setLoading(true);
     try {
       const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -1422,6 +1423,8 @@ export default function ReportIncidentScreen() {
                       style={styles.clearInputButton}
                       onPress={() => {
                         setManualLocation('');
+                        setShowPlaceSuggestions(false);
+                        setPlaceSuggestions([]);
                       }}
                     >
                   <Ionicons name="close-circle" size={22} color="#ccc" />
@@ -1429,7 +1432,29 @@ export default function ReportIncidentScreen() {
                   )}
                 </View>
 
-            {/* Confirm Location Button Uber Style */}
+            {/* Location Suggestions - Show above confirm button */}
+            {showPlaceSuggestions && placeSuggestions.length > 0 && (
+              <View style={styles.suggestionsUberContainer}>
+                {placeSuggestions.map((item) => (
+                  <TouchableOpacity
+                    key={item.place_id}
+                    style={styles.suggestionUberItem}
+                    onPress={() => handlePlaceSuggestionSelect(item)}
+                  >
+                    <Ionicons name="location-outline" size={20} color="#2563eb" style={{marginRight: 10}} />
+                    <View style={{flex: 1}}>
+                      <Text style={styles.suggestionUberMainText}>{item.structured_formatting.main_text}</Text>
+                      {item.structured_formatting.secondary_text && (
+                        <Text style={styles.suggestionUberSecondaryText}>{item.structured_formatting.secondary_text}</Text>
+              )}
+            </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {/* Confirm Location Button Uber Style - Only show when no suggestions or manual input */}
+            {(!showPlaceSuggestions || placeSuggestions.length === 0) && (
                       <TouchableOpacity
               style={styles.confirmLocationUberButton}
               onPress={async () => {
@@ -1475,6 +1500,7 @@ export default function ReportIncidentScreen() {
             >
               <Text style={styles.confirmLocationUberText}>Confirm Location</Text>
                       </TouchableOpacity>
+            )}
 
             {/* Use Current Location Button (Uber style, only if manual input is empty) */}
             {manualLocation.length === 0 && (
@@ -1534,26 +1560,6 @@ export default function ReportIncidentScreen() {
                       </Text>
                     )}
                 </View>
-            )}
-
-            {showPlaceSuggestions && placeSuggestions.length > 0 && (
-              <View style={styles.suggestionsUberContainer}>
-                {placeSuggestions.map((item) => (
-                  <TouchableOpacity
-                    key={item.place_id}
-                    style={styles.suggestionUberItem}
-                    onPress={() => handlePlaceSuggestionSelect(item)}
-                  >
-                    <Ionicons name="location-outline" size={20} color="#2563eb" style={{marginRight: 10}} />
-                    <View style={{flex: 1}}>
-                      <Text style={styles.suggestionUberMainText}>{item.structured_formatting.main_text}</Text>
-                      {item.structured_formatting.secondary_text && (
-                        <Text style={styles.suggestionUberSecondaryText}>{item.structured_formatting.secondary_text}</Text>
-              )}
-            </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
             )}
           </View>
         </View>
@@ -2091,11 +2097,13 @@ const styles = StyleSheet.create({
     height: 120,
     width: '100%',
   },
+  clearInputButton: {
+    padding: 4,
+  },
   suggestionsUberContainer: {
     backgroundColor: '#fff',
     borderRadius: 10,
-    marginTop: 2,
-    marginBottom: 10,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: '#e1e5e9',
     elevation: 3,
@@ -2105,6 +2113,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     maxHeight: 200,
     overflow: 'hidden',
+    zIndex: 1000,
   },
   suggestionUberItem: {
     flexDirection: 'row',
