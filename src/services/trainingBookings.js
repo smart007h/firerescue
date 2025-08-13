@@ -96,7 +96,6 @@ export const getUserBookings = async (userId) => {
 
 export const getStationBookings = async (stationId) => {
   try {
-    console.log('=== DEBUG: getStationBookings called ===');
     console.log('Querying for stationId:', stationId, 'Type:', typeof stationId);
     const { data, error } = await supabase
       .from('training_bookings')

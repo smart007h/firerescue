@@ -8,12 +8,15 @@ import {
   ScrollView,
   Alert,
   Modal,
+  Share,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../config/supabaseClient';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 
 const floorTypes = [
   "Ground Floor",
@@ -213,6 +216,17 @@ const CertificateApplicationScreen = () => {
       }
 
       console.log('Certificate application submitted successfully:', application);
+      
+      // Clear all inputs after successful submission
+      setName("");
+      setAddress("");
+      setLocation("");
+      setUseOfPremises("");
+      setNumberOfStoreys("");
+      setFloors([]);
+      setReviewFee(0);
+      setFinalCost(0);
+      
       setShowSubmissionMessage(true);
 
     } catch (error) {
@@ -225,6 +239,73 @@ const CertificateApplicationScreen = () => {
 
   const closeSubmissionMessage = () => {
     setShowSubmissionMessage(false);
+  };
+
+  const downloadApplication = async () => {
+    try {
+      // Create application summary text
+      const applicationText = `
+FIRE SAFETY CERTIFICATE APPLICATION
+=====================================
+
+Application Details:
+-------------------
+Applicant Name: ${name}
+Premises Address: ${address}
+Premises Location: ${location}
+Use of Premises: ${useOfPremises}
+Number of Storeys: ${numberOfStoreys}
+
+Floor Details:
+--------------
+${floors.map((floor, index) => 
+  `Floor ${index + 1}: ${floor.type} - ${floor.length}m x ${floor.width}m`
+).join('\n')}
+
+Cost Breakdown:
+---------------
+Review Fee: GH₵${reviewFee.toFixed(2)}
+Final Cost: GH₵${finalCost.toFixed(2)}
+
+Application Status: Pending
+Submitted: ${new Date().toLocaleDateString()}
+
+---
+This application has been submitted to the Fire Service for review.
+You will be notified of any updates regarding your application status.
+      `.trim();
+
+      // Create file path
+      const fileName = `Certificate_Application_${name.replace(/\s+/g, '_')}_${Date.now()}.txt`;
+      const fileUri = FileSystem.documentDirectory + fileName;
+
+      // Write file
+      await FileSystem.writeAsStringAsync(fileUri, applicationText);
+
+      // Check if sharing is available
+      const isAvailable = await Sharing.isAvailableAsync();
+      
+      if (isAvailable) {
+        // Share the file
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'text/plain',
+          dialogTitle: 'Save Certificate Application'
+        });
+      } else {
+        // Fallback to showing alert with text
+        Alert.alert(
+          'Download Complete', 
+          `Application saved to: ${fileName}\n\nFile location: ${fileUri}`,
+          [{ text: 'OK' }]
+        );
+      }
+
+      closeSubmissionMessage();
+
+    } catch (error) {
+      console.error('Error downloading application:', error);
+      Alert.alert('Error', 'Failed to download application. Please try again.');
+    }
   };
 
   return (
@@ -490,11 +571,9 @@ const CertificateApplicationScreen = () => {
             </Text>
             <TouchableOpacity 
               style={styles.downloadButton}
-              onPress={() => {
-                Alert.alert("Download", "Download functionality would be implemented here");
-                closeSubmissionMessage();
-              }}
+              onPress={downloadApplication}
             >
+              <Ionicons name="download-outline" size={20} color="#fff" style={{marginRight: 8}} />
               <Text style={styles.downloadButtonText}>Download Application</Text>
             </TouchableOpacity>
             <TouchableOpacity 
@@ -720,6 +799,8 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 5,
     alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
     width: "100%",
     marginBottom: 10,
   },

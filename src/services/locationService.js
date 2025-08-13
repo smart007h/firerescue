@@ -12,9 +12,6 @@ const hasGoogleMapsKey = GOOGLE_MAPS_API_KEY && GOOGLE_MAPS_API_KEY !== 'your_go
 
 if (!hasGoogleMapsKey) {
   console.warn('Google Maps API key not found. Using fallback location services.');
-  console.log('Debug - API Key value:', GOOGLE_MAPS_API_KEY);
-  console.log('Debug - expoConfig.extra:', Constants.expoConfig?.extra);
-  console.log('Debug - process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY:', process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY);
 } else {
   console.log('✅ Google Maps API key loaded successfully');
 }

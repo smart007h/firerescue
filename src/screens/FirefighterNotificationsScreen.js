@@ -10,14 +10,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const FirefighterNotificationsScreen = () => {
   const navigation = useNavigation();
-  const [activeView, setActiveView] = useState(null); // 'callLogs' or 'bookings'
+  const [activeView, setActiveView] = useState(null); // 'callLogs', 'bookings', or 'certificates'
   const [bookings, setBookings] = useState([]);
   const [callLogs, setCallLogs] = useState([]);
+  const [certificates, setCertificates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [stationId, setStationId] = useState(null);
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [selectedCertificate, setSelectedCertificate] = useState(null);
   const [showBookingDetails, setShowBookingDetails] = useState(false);
+  const [showCertificateDetails, setShowCertificateDetails] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
@@ -27,12 +30,13 @@ const FirefighterNotificationsScreen = () => {
   useEffect(() => {
     if (activeView === 'bookings' && stationId) {
       loadStationBookings();
+    } else if (activeView === 'certificates' && stationId) {
+      loadCertificateApplications();
     }
   }, [activeView, stationId]);
 
   const checkAuthState = async () => {
     try {
-      console.log('=== Checking Authentication State ===');
       setLoading(true);
 
       // First check AsyncStorage for session
@@ -150,10 +154,8 @@ const FirefighterNotificationsScreen = () => {
       } else if (event === 'SIGNED_OUT') {
         setIsAuthenticated(false);
         await AsyncStorage.removeItem('stationId');
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'LoginSelection' }]
-        });
+        // Don't manually reset navigation - let AuthContext and AppNavigator handle the logout flow
+        console.log('Auth signed out - letting AppNavigator handle navigation');
       }
     });
 
@@ -164,12 +166,9 @@ const FirefighterNotificationsScreen = () => {
 
   const loadFirefighterData = async () => {
     try {
-      console.log('=== DEBUG: Loading Firefighter Data ===');
       const storedStationId = await AsyncStorage.getItem('stationId');
-      console.log('Stored station ID:', storedStationId);
       
       if (storedStationId) {
-        console.log('Using stored station ID');
         setStationId(storedStationId);
         return;
       }
@@ -235,28 +234,16 @@ const FirefighterNotificationsScreen = () => {
   };
 
   const loadStationBookings = async () => {
+    if (!stationId) {
+      return;
+    }
+
     try {
-      console.log('=== DEBUG: loadStationBookings called ===');
-      console.log('Current stationId:', stationId, 'Type:', typeof stationId);
-      // First, let's check ALL bookings in the database
-      const { data: allBookings, error: allBookingsError } = await supabase
-        .from('training_bookings')
-        .select('*')
-        .order('training_date', { ascending: true });
-      console.log('=== ALL BOOKINGS IN DATABASE ===');
-      console.log('Total bookings found:', allBookings?.length || 0);
-      console.log('All bookings:', JSON.stringify(allBookings, null, 2));
-      console.log('Error (if any):', allBookingsError);
-      // Now try the station-specific query
       const { data, error } = await supabase
         .from('training_bookings')
         .select('*')
         .eq('station_id', stationId)
         .order('training_date', { ascending: true });
-      console.log('=== STATION SPECIFIC BOOKINGS ===');
-      console.log('Query error:', error);
-      console.log('Number of bookings found for station:', data?.length || 0);
-      console.log('Station bookings:', JSON.stringify(data, null, 2));
 
       if (error) {
         console.error('Error loading station bookings:', error);
@@ -265,13 +252,6 @@ const FirefighterNotificationsScreen = () => {
       }
 
       if (!data || data.length === 0) {
-        console.log('No bookings found for station:', stationId);
-        console.log('Station ID format check:', {
-          isString: typeof stationId === 'string',
-          length: stationId?.length,
-          value: stationId,
-          matchesPattern: stationId?.match(/^FS[0-9]{3}$/)
-        });
         setBookings([]);
         return;
       }
@@ -283,7 +263,6 @@ const FirefighterNotificationsScreen = () => {
         return new Date(a.training_date) - new Date(b.training_date);
       });
 
-      console.log('Sorted bookings:', JSON.stringify(sortedBookings, null, 2));
       setBookings(sortedBookings);
     } catch (error) {
       console.error('Error in loadStationBookings:', error);
@@ -323,6 +302,27 @@ const FirefighterNotificationsScreen = () => {
     }
   };
 
+  const loadCertificateApplications = async () => {
+    try {
+      // Load all certificate applications (for now, until we implement station-based filtering)
+      const { data, error } = await supabase
+        .from('certificate_applications')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error loading certificates:', error);
+        throw error;
+      }
+
+      setCertificates(data || []);
+    } catch (error) {
+      console.error('Error loading certificate applications:', error);
+      Alert.alert('Error', 'Failed to load certificate applications');
+      setCertificates([]);
+    }
+  };
+
   const handleRefresh = () => {
     setRefreshing(true);
     loadData();
@@ -331,6 +331,38 @@ const FirefighterNotificationsScreen = () => {
   const handleBookingPress = (booking) => {
     setSelectedBooking(booking);
     setShowBookingDetails(true);
+  };
+
+  const handleCertificatePress = (certificate) => {
+    setSelectedCertificate(certificate);
+    setShowCertificateDetails(true);
+  };
+
+  const handleUpdateCertificateStatus = async (certificateId, newStatus, rejectionReason = null) => {
+    try {
+      const updateData = { 
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      };
+      
+      if (rejectionReason) {
+        updateData.rejection_reason = rejectionReason;
+      }
+      
+      const { error } = await supabase
+        .from('certificate_applications')
+        .update(updateData)
+        .eq('id', certificateId);
+
+      if (error) throw error;
+
+      Alert.alert('Success', `Certificate application ${newStatus} successfully`);
+      setShowCertificateDetails(false);
+      loadCertificateApplications(); // Refresh the list
+    } catch (error) {
+      console.error('Error updating certificate status:', error);
+      Alert.alert('Error', 'Failed to update certificate status');
+    }
   };
 
   const handleUpdateBookingStatus = async (bookingId, newStatus) => {
@@ -369,6 +401,15 @@ const FirefighterNotificationsScreen = () => {
         <Ionicons name="calendar-outline" size={32} color="#FFFFFF" />
         <Text style={styles.mainButtonText}>Bookings</Text>
         <Text style={styles.mainButtonSubtext}>Review and manage training bookings</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.mainButton, { backgroundColor: '#FF9500' }]}
+        onPress={() => setActiveView('certificates')}
+      >
+        <Ionicons name="document-text-outline" size={32} color="#FFFFFF" />
+        <Text style={styles.mainButtonText}>Certificates</Text>
+        <Text style={styles.mainButtonSubtext}>Review and approve certificate applications</Text>
       </TouchableOpacity>
     </View>
   );
@@ -621,6 +662,235 @@ const FirefighterNotificationsScreen = () => {
     </Modal>
   );
 
+  const renderCertificates = () => (
+    <View style={styles.viewContainer}>
+      <View style={styles.viewHeader}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => setActiveView(null)}
+        >
+          <Ionicons name="arrow-back" size={24} color="#4A5568" />
+          <Text style={styles.backButtonText}>Back</Text>
+        </TouchableOpacity>
+        <Text style={styles.viewTitle}>Certificate Applications</Text>
+        <Badge style={styles.badge}>
+          {certificates.filter(c => c.status === 'pending').length} Pending
+        </Badge>
+      </View>
+
+      <ScrollView
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+      >
+        {certificates.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="document-text-outline" size={48} color="#757575" />
+            <Text style={styles.emptyText}>No certificate applications found</Text>
+          </View>
+        ) : (
+          certificates.map((certificate) => (
+            <TouchableOpacity
+              key={certificate.id}
+              onPress={() => handleCertificatePress(certificate)}
+            >
+              <Card style={styles.bookingCard}>
+                <Card.Content>
+                  <View style={styles.bookingHeader}>
+                    <Text style={styles.companyName}>
+                      {certificate.applicant_name}
+                    </Text>
+                    <View style={styles.bookingDateContainer}>
+                      <Ionicons name="calendar-outline" size={16} color="#718096" />
+                      <Text style={styles.bookingDate}>
+                        {formatDateTime(certificate.created_at)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.bookingInfo}>
+                    <View style={styles.infoRow}>
+                      <Ionicons name="location-outline" size={16} color="#718096" />
+                      <Text style={styles.infoLabel}>Address:</Text>
+                      <Text style={styles.infoValue}>{certificate.premises_address}</Text>
+                    </View>
+                    <View style={styles.infoRow}>
+                      <Ionicons name="business-outline" size={16} color="#718096" />
+                      <Text style={styles.infoLabel}>Use:</Text>
+                      <Text style={styles.infoValue}>{certificate.use_of_premises}</Text>
+                    </View>
+                    <View style={styles.infoRow}>
+                      <Ionicons name="layers-outline" size={16} color="#718096" />
+                      <Text style={styles.infoLabel}>Storeys:</Text>
+                      <Text style={styles.infoValue}>{certificate.number_of_storeys}</Text>
+                    </View>
+                    <View style={styles.infoRow}>
+                      <Ionicons name="cash-outline" size={16} color="#718096" />
+                      <Text style={styles.infoLabel}>Cost:</Text>
+                      <Text style={styles.infoValue}>GH₵{certificate.final_cost}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.bookingFooter}>
+                    <View style={[styles.statusContainer, { backgroundColor: `${getCertificateStatusColor(certificate.status)}15` }]}>
+                      <View style={[styles.statusDot, { backgroundColor: getCertificateStatusColor(certificate.status) }]} />
+                      <Text style={[styles.statusText, { color: getCertificateStatusColor(certificate.status) }]}>
+                        {certificate.status.toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+                </Card.Content>
+              </Card>
+            </TouchableOpacity>
+          ))
+        )}
+      </ScrollView>
+    </View>
+  );
+
+  const renderCertificateDetails = () => (
+    <Modal
+      visible={showCertificateDetails}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setShowCertificateDetails(false)}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Certificate Application Details</Text>
+            <TouchableOpacity
+              onPress={() => setShowCertificateDetails(false)}
+              style={styles.closeButton}
+            >
+              <Ionicons name="close" size={24} color="#4A5568" />
+            </TouchableOpacity>
+          </View>
+
+          {selectedCertificate && (
+            <ScrollView style={styles.modalScroll}>
+              <View style={styles.detailSection}>
+                <View style={styles.statusContainer}>
+                  <Text style={[styles.statusText, { color: getCertificateStatusColor(selectedCertificate.status) }]}>
+                    {selectedCertificate.status.toUpperCase()}
+                  </Text>
+                </View>
+
+                <View style={styles.detailRow}>
+                  <Ionicons name="person-outline" size={20} color="#4A5568" />
+                  <Text style={styles.detailLabel}>Applicant:</Text>
+                  <Text style={styles.detailValue}>{selectedCertificate.applicant_name}</Text>
+                </View>
+
+                <View style={styles.detailRow}>
+                  <Ionicons name="location-outline" size={20} color="#4A5568" />
+                  <Text style={styles.detailLabel}>Address:</Text>
+                  <Text style={styles.detailValue}>{selectedCertificate.premises_address}</Text>
+                </View>
+
+                <View style={styles.detailRow}>
+                  <Ionicons name="map-outline" size={20} color="#4A5568" />
+                  <Text style={styles.detailLabel}>Location:</Text>
+                  <Text style={styles.detailValue}>{selectedCertificate.premises_location}</Text>
+                </View>
+
+                <View style={styles.detailRow}>
+                  <Ionicons name="business-outline" size={20} color="#4A5568" />
+                  <Text style={styles.detailLabel}>Use:</Text>
+                  <Text style={styles.detailValue}>{selectedCertificate.use_of_premises}</Text>
+                </View>
+
+                <View style={styles.detailRow}>
+                  <Ionicons name="layers-outline" size={20} color="#4A5568" />
+                  <Text style={styles.detailLabel}>Storeys:</Text>
+                  <Text style={styles.detailValue}>{selectedCertificate.number_of_storeys}</Text>
+                </View>
+
+                <View style={styles.detailRow}>
+                  <Ionicons name="cash-outline" size={20} color="#4A5568" />
+                  <Text style={styles.detailLabel}>Review Fee:</Text>
+                  <Text style={styles.detailValue}>GH₵{selectedCertificate.review_fee}</Text>
+                </View>
+
+                <View style={styles.detailRow}>
+                  <Ionicons name="cash-outline" size={20} color="#4A5568" />
+                  <Text style={styles.detailLabel}>Final Cost:</Text>
+                  <Text style={styles.detailValue}>GH₵{selectedCertificate.final_cost}</Text>
+                </View>
+
+                <View style={styles.detailRow}>
+                  <Ionicons name="calendar-outline" size={20} color="#4A5568" />
+                  <Text style={styles.detailLabel}>Submitted:</Text>
+                  <Text style={styles.detailValue}>{formatDateTime(selectedCertificate.created_at)}</Text>
+                </View>
+
+                {selectedCertificate.floors && (
+                  <View style={styles.detailRow}>
+                    <Ionicons name="list-outline" size={20} color="#4A5568" />
+                    <Text style={styles.detailLabel}>Floors:</Text>
+                    <Text style={styles.detailValue}>
+                      {selectedCertificate.floors.length} floor(s) defined
+                    </Text>
+                  </View>
+                )}
+
+                {selectedCertificate.rejection_reason && (
+                  <View style={styles.detailRow}>
+                    <Ionicons name="warning-outline" size={20} color="#DC3545" />
+                    <Text style={styles.detailLabel}>Rejection Reason:</Text>
+                    <Text style={[styles.detailValue, { color: '#DC3545' }]}>
+                      {selectedCertificate.rejection_reason}
+                    </Text>
+                  </View>
+                )}
+
+                {selectedCertificate.status === 'pending' && (
+                  <View style={styles.actionButtons}>
+                    <Button
+                      mode="contained"
+                      onPress={() => handleUpdateCertificateStatus(selectedCertificate.id, 'approved')}
+                      style={[styles.actionButton, { backgroundColor: '#4CAF50' }]}
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      mode="contained"
+                      onPress={() => {
+                        Alert.prompt(
+                          'Rejection Reason',
+                          'Please provide a reason for rejection:',
+                          (reason) => {
+                            if (reason) {
+                              handleUpdateCertificateStatus(selectedCertificate.id, 'rejected', reason);
+                            }
+                          }
+                        );
+                      }}
+                      style={[styles.actionButton, { backgroundColor: '#DC3545' }]}
+                    >
+                      Reject
+                    </Button>
+                  </View>
+                )}
+              </View>
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const getCertificateStatusColor = (status) => {
+    switch (status) {
+      case 'pending': return '#FFC107';
+      case 'under_review': return '#2196F3';
+      case 'approved': return '#4CAF50';
+      case 'rejected': return '#DC3545';
+      default: return '#757575';
+    }
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'pending': return '#FFC107';
@@ -683,11 +953,14 @@ const FirefighterNotificationsScreen = () => {
         renderMainButtons()
       ) : activeView === 'callLogs' ? (
         renderCallLogs()
-      ) : (
+      ) : activeView === 'bookings' ? (
         renderBookings()
+      ) : (
+        renderCertificates()
       )}
 
       {renderBookingDetails()}
+      {renderCertificateDetails()}
     </SafeAreaView>
   );
 };

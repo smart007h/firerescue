@@ -26,10 +26,10 @@ const DispatcherLoginScreen = ({ navigation }) => {
   const [error, setError] = useState(null);
   const { updateDispatcherAuth, markAppRefresh } = useAuth();
 
-  // Debug: Log Supabase session on app start
+  // Check for existing session on component mount
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('DEBUG: Supabase session on app start:', session);
+      console.log('Supabase session on app start:', session);
     });
   }, []);
 

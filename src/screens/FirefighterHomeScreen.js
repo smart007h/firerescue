@@ -10,12 +10,14 @@ import { FlatList, RefreshControl } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { getAddressFromCoordinates } from '../services/locationService';
+import { useAuth } from '../context/AuthContext';
 
 const SUPABASE_FUNCTION_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/assign-incident`;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
 const FirefighterHomeScreen = ({ navigation }) => {
+  const { signOut } = useAuth();
   const [stationInfo, setStationInfo] = useState(null);
   const [activeEmergencies, setActiveEmergencies] = useState([]);
   const [incidents, setIncidents] = useState([]);
@@ -244,11 +246,8 @@ const FirefighterHomeScreen = ({ navigation }) => {
     await AsyncStorage.removeItem('stationId');
     await AsyncStorage.removeItem('userRole');
     
-    // Navigate to login selection
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'LoginSelection' }],
-    });
+    // Let AuthContext and AppNavigator handle the navigation instead of manual reset
+    await signOut();
   };
 
   const checkAndRefreshSession = async () => {

@@ -7,8 +7,10 @@ import { supabase } from '../config/supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getAddressFromCoordinates } from '../services/locationService';
 import { useFocusEffect } from '@react-navigation/native';
+import { useAuth } from '../context/AuthContext';
 
 const FirefighterIncidentScreen = ({ route, navigation }) => {
+  const { signOut } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [incident, setIncident] = useState(null);
@@ -162,11 +164,8 @@ const FirefighterIncidentScreen = ({ route, navigation }) => {
     await AsyncStorage.removeItem('stationId');
     await AsyncStorage.removeItem('userRole');
     
-    // Navigate to login selection
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'LoginSelection' }],
-    });
+    // Let AuthContext and AppNavigator handle the navigation instead of manual reset
+    await signOut();
   };
 
   const checkAndRefreshSession = async () => {

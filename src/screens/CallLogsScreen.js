@@ -61,12 +61,10 @@ const CallLogsScreen = () => {
       }
 
       const { data, error } = await query;
-      console.log('Supabase call logs response:', data); // Debug raw response
       if (error) throw error;
       // Defensive: ensure data is always an array and filter out nulls and invalids
       let safeData = [];
       if (Array.isArray(data)) {
-        // Log raw array for debugging
         console.log('Raw call logs array before filtering:', data);
         safeData = data.filter(call => call && typeof call === 'object' && call.id);
       } else if (data && typeof data === 'object' && data.id) {

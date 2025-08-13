@@ -26,7 +26,8 @@ const FirefighterTrainingApprovalScreen = ({ navigation }) => {
         } else {
           setErrorMsg('No station ID found. Please log in again.');
           Alert.alert('Error', 'No station ID found. Please log in again.');
-          navigation.reset({ index: 0, routes: [{ name: 'LoginSelection' }] });
+          // Don't manually reset navigation - let AuthContext handle logout flow
+          navigation.goBack(); // Just go back to previous screen
         }
       } catch (error) {
         setErrorMsg('Failed to load station information.');
@@ -49,9 +50,7 @@ const FirefighterTrainingApprovalScreen = ({ navigation }) => {
     try {
       setLoading(true);
       setErrorMsg('');
-      console.log('DEBUG: stationId used for query:', stationId);
       const { data, error } = await getStationBookings(stationId);
-      console.log('DEBUG: bookings data returned:', data);
       if (error) throw error;
       // Sort bookings: pending first, then by date
       const sortedBookings = data.sort((a, b) => {

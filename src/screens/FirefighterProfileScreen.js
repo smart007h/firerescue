@@ -36,11 +36,8 @@ function FirefighterProfileScreen() {
     await AsyncStorage.removeItem('stationId');
     await AsyncStorage.removeItem('userRole');
     
-    // Navigate to login selection
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'LoginSelection' }],
-    });
+    // Let AuthContext and AppNavigator handle the navigation instead of manual reset
+    await signOut();
   };
 
   const loadData = async () => {
@@ -189,7 +186,8 @@ function FirefighterProfileScreen() {
     try {
       await signOut();
       console.log('Firefighter logged out successfully');
-      // Don't navigate manually - let AuthContext and AppNavigator handle it
+      // The AuthContext will handle userRole reset and AppNavigator will switch to AuthStack
+      // No manual navigation needed as AppNavigator will handle the transition
     } catch (error) {
       console.error('Error logging out:', error);
       Alert.alert('Error', 'Failed to log out');

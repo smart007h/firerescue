@@ -16,8 +16,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../config/supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DataTable, Searchbar, Button, IconButton, Portal, Modal, TextInput, HelperText, Card } from 'react-native-paper';
+import { useAuth } from '../context/AuthContext';
 
 const FirefighterTeamScreen = ({ navigation }) => {
+  const { signOut } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [teamMembers, setTeamMembers] = useState([]);
@@ -54,11 +56,8 @@ const FirefighterTeamScreen = ({ navigation }) => {
     await AsyncStorage.removeItem('stationId');
     await AsyncStorage.removeItem('userRole');
     
-    // Navigate to login selection
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'LoginSelection' }],
-    });
+    // Let AuthContext and AppNavigator handle the navigation instead of manual reset
+    await signOut();
   };
 
   const checkSession = async () => {
