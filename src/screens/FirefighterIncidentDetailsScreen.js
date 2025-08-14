@@ -78,46 +78,101 @@ const FirefighterIncidentDetailsScreen = ({ route, navigation }) => {
   const handleStatusUpdate = async (newStatus) => {
     try {
       setUpdatingStatus(true);
-
       let finalStatus = newStatus;
       let alertMessage = '';
 
-      // When firefighter approves, automatically set to in_progress and assign to dispatcher
       if (newStatus === 'approved') {
+        // Find nearest available dispatcher for the incident's station
+        // 1. Load incident details (already loaded in state)
+        const stationId = incident?.station_id;
+        let dispatcherId = null;
+        if (stationId) {
+          // 2. Get all active dispatchers for this station with coordinates
+          const { data: dispatchers, error: dispatcherError } = await supabase
+            .from('dispatchers')
+            .select('id, latitude, longitude, is_active')
+            .eq('station_id', stationId)
+            .eq('is_active', true);
+          if (!dispatcherError && dispatchers && dispatchers.length > 0) {
+            // 3. Find nearest dispatcher by location
+            let incident_lat = null, incident_lng = null;
+            if (incident.location && incident.location.includes(',')) {
+              const coords = incident.location.split(',');
+              if (coords.length === 2) {
+                incident_lat = parseFloat(coords[0]);
+                incident_lng = parseFloat(coords[1]);
+              }
+            }
+            if (incident_lat != null && incident_lng != null) {
+              let minDistance = Infinity;
+              let nearestDispatcher = null;
+              const toRadians = (deg) => deg * (Math.PI / 180);
+              const haversineDistance = (lat1, lon1, lat2, lon2) => {
+                const R = 6371;
+                const dLat = toRadians(lat2 - lat1);
+                const dLon = toRadians(lon2 - lon1);
+                const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                  Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
+                  Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                return R * c;
+              };
+              for (const dispatcher of dispatchers) {
+                if (dispatcher.latitude != null && dispatcher.longitude != null) {
+                  const dist = haversineDistance(incident_lat, incident_lng, dispatcher.latitude, dispatcher.longitude);
+                  if (dist < minDistance) {
+                    minDistance = dist;
+                    nearestDispatcher = dispatcher;
+                  }
+                }
+              }
+              if (nearestDispatcher) {
+                dispatcherId = nearestDispatcher.id;
+              }
+            }
+            // fallback: just pick the first dispatcher if no location
+            if (!dispatcherId) dispatcherId = dispatchers[0].id;
+          }
+        }
         finalStatus = 'in_progress';
-        alertMessage = 'Incident approved and assigned to dispatcher (Status: IN PROGRESS)';
-        
-        // Here you could add logic to automatically assign to a dispatcher
-        // For now, we'll just update the status
+        alertMessage = dispatcherId
+          ? 'Incident approved and assigned to dispatcher (Status: IN PROGRESS)'
+          : 'Incident approved (Status: IN PROGRESS), but no dispatcher assigned.';
+
+        // Update incident with dispatcher_id if found
+        const { error } = await supabase
+          .from('incidents')
+          .update({
+            status: finalStatus,
+            updated_at: new Date().toISOString(),
+            ...(dispatcherId ? { dispatcher_id: dispatcherId } : {})
+          })
+          .eq('id', incidentId);
+        if (error) throw error;
+        setIncident(prev => ({ ...prev, status: finalStatus, dispatcher_id: dispatcherId }));
       } else {
         alertMessage = `Incident status has been changed to ${newStatus.toUpperCase()}`;
+        const { error } = await supabase
+          .from('incidents')
+          .update({
+            status: finalStatus,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', incidentId);
+        if (error) throw error;
+        setIncident(prev => ({ ...prev, status: finalStatus }));
       }
-
-      const { error } = await supabase
-        .from('incidents')
-        .update({ 
-          status: finalStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', incidentId);
-
-      if (error) throw error;
-
-      // Update local state
-      setIncident(prev => ({ ...prev, status: finalStatus }));
 
       Alert.alert(
         'Status Updated',
         alertMessage,
-        [{ 
+        [{
           text: 'OK',
           onPress: () => {
-            // Navigate back and trigger refresh
             navigation.navigate('FirefighterIncidents', { refresh: true });
           }
         }]
       );
-
     } catch (error) {
       console.error('Error updating status:', error);
       Alert.alert('Error', 'Failed to update incident status');
