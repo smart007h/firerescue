@@ -28,15 +28,12 @@ const FirefighterHomeScreen = ({ navigation }) => {
     resolvedToday: 0,
     responseRate: 0
   });
-  const [emergencyCalls, setEmergencyCalls] = useState([]);
 
   useEffect(() => {
     loadStationInfo();
     loadIncidents();
     loadStationStats();
     setupRealtimeSubscription();
-    loadEmergencyCalls();
-    subscribeToNewCalls();
   }, []);
 
   // Update stats when screen comes into focus
@@ -381,99 +378,8 @@ const FirefighterHomeScreen = ({ navigation }) => {
     }
   };
 
-  const loadEmergencyCalls = async () => {
-    try {
-      setLoading(true);
-      
-      const isSessionValid = await checkAndRefreshSession();
-      if (!isSessionValid) {
-        console.log('Session invalid, redirecting to login');
-        Alert.alert('Session Expired', 'Please log in again');
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'FirefighterLogin' }],
-        });
-        return;
-      }
 
-      const stationId = await AsyncStorage.getItem('stationId');
-      if (!stationId) {
-        console.error('No station ID found in AsyncStorage');
-        return;
-      }
 
-      // First get the firefighter record to get the UUID
-      const { data: firefighter, error: firefighterError } = await supabase
-        .from('firefighters')
-        .select('id')
-        .eq('station_id', stationId)
-        .single();
-
-      if (firefighterError) {
-        console.error('Error getting firefighter record:', firefighterError);
-        throw firefighterError;
-      }
-
-      if (!firefighter) {
-        throw new Error('Firefighter station not found');
-      }
-
-      const { data: calls, error } = await supabase
-        .from('emergency_calls')
-        .select('*')
-        .eq('station_id', firefighter.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setEmergencyCalls(calls || []);
-    } catch (error) {
-      console.error('Error loading emergency calls:', error);
-      Alert.alert('Error', 'Failed to load emergency calls');
-      setEmergencyCalls([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const subscribeToNewCalls = () => {
-    const subscription = supabase
-      .channel('emergency_calls')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'emergency_calls',
-      }, payload => {
-        // Play sound alert
-        // TODO: Implement sound alert
-        loadEmergencyCalls();
-      })
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  };
-
-  const handleCallStatus = async (callId, newStatus) => {
-    try {
-      const updates = {
-        status: newStatus,
-        ...(newStatus === 'received' ? { received_at: new Date().toISOString() } : {}),
-        ...(newStatus === 'completed' ? { completed_at: new Date().toISOString() } : {})
-      };
-
-      const { error } = await supabase
-        .from('emergency_calls')
-        .update(updates)
-        .eq('id', callId);
-
-      if (error) throw error;
-      loadEmergencyCalls();
-    } catch (error) {
-      console.error('Error updating call status:', error);
-      Alert.alert('Error', 'Failed to update call status');
-    }
-  };
 
   const openMaps = async (location) => {
     try {
@@ -552,10 +458,10 @@ const FirefighterHomeScreen = ({ navigation }) => {
       }
       // Fetch all available dispatchers for the station with their coordinates
       const { data: dispatchers, error: dispatcherError } = await supabase
-        .from('dispatchers')
-        .select('id, dispatcher_id, latitude, longitude, is_active')
-        .eq('station_id', stationId)
-        .eq('is_active', true);
+  .from('dispatchers')
+  .select('id, dispatcher_id, name, email, latitude, longitude, is_active')
+  .eq('station_id', stationId)
+  .eq('is_active', true);
       if (dispatcherError || !dispatchers || dispatchers.length === 0) {
         Alert.alert('Error', 'No available dispatchers found for this station.');
         return;
@@ -1002,71 +908,6 @@ const FirefighterHomeScreen = ({ navigation }) => {
     }
   };
 
-  const renderEmergencyCall = (call) => {
-    const statusColors = {
-      pending: '#DC3545',
-      received: '#FFC107',
-      completed: '#28A745',
-      cancelled: '#6C757D'
-    };
-
-    return (
-      <Card key={call.id} style={styles.callCard}>
-        <Card.Content>
-          <View style={styles.callHeader}>
-            <Text style={styles.callerName}>{call.profiles?.full_name || 'Unknown Caller'}</Text>
-            <Badge style={[styles.statusBadge, { backgroundColor: statusColors[call.status] }]}>
-              {call.status.toUpperCase()}
-            </Badge>
-          </View>
-
-          <View style={styles.callDetails}>
-            <Text style={styles.callTime}>
-              {new Date(call.created_at).toLocaleString()}
-            </Text>
-
-            <TouchableOpacity 
-              style={styles.locationButton}
-              onPress={() => openMaps(call.caller_location)}
-            >
-              <Ionicons name="location" size={20} color="#DC3545" />
-              <Text style={styles.locationText}>View Location</Text>
-            </TouchableOpacity>
-          </View>
-
-          {call.status === 'pending' && (
-            <View style={styles.actionButtons}>
-              <Button 
-                mode="contained" 
-                onPress={() => handleCallStatus(call.id, 'received')}
-                style={[styles.actionButton, { backgroundColor: '#28A745' }]}
-              >
-                Accept Call
-              </Button>
-              <Button 
-                mode="outlined" 
-                onPress={() => handleCallStatus(call.id, 'cancelled')}
-                style={styles.actionButton}
-                textColor="#DC3545"
-              >
-                Cancel
-              </Button>
-            </View>
-          )}
-
-          {call.status === 'received' && (
-            <Button 
-              mode="contained" 
-              onPress={() => handleCallStatus(call.id, 'completed')}
-              style={[styles.actionButton, { backgroundColor: '#28A745' }]}
-            >
-              Complete Call
-            </Button>
-          )}
-        </Card.Content>
-      </Card>
-    );
-  };
 
   const getAddressFromGoogle = async (latitude, longitude) => {
     const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -1167,25 +1008,6 @@ const FirefighterHomeScreen = ({ navigation }) => {
           )}
         </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Emergency Calls</Text>
-            <TouchableOpacity onPress={loadEmergencyCalls}>
-              <Text style={styles.viewAllText}>View All</Text>
-            </TouchableOpacity>
-          </View>
-          {loading ? (
-            <Text style={styles.loadingText}>Loading emergency calls...</Text>
-          ) : emergencyCalls.length > 0 ? (
-            emergencyCalls.map((call) => (
-              <View key={call.id}>
-                {renderEmergencyCall(call)}
-              </View>
-            ))
-          ) : (
-            <Text style={styles.noCallsText}>No emergency calls</Text>
-          )}
-        </View>
       </ScrollView>
     </SafeAreaView>
   );

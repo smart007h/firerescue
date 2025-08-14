@@ -10,9 +10,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const FirefighterNotificationsScreen = () => {
   const navigation = useNavigation();
-  const [activeView, setActiveView] = useState(null); // 'callLogs', 'bookings', or 'certificates'
+  const [activeView, setActiveView] = useState(null); // 'bookings' or 'certificates'
   const [bookings, setBookings] = useState([]);
-  const [callLogs, setCallLogs] = useState([]);
   const [certificates, setCertificates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -270,37 +269,6 @@ const FirefighterNotificationsScreen = () => {
     }
   };
 
-  const loadStationCallLogs = async () => {
-    try {
-      // First get the firefighter record to get the UUID
-      const { data: firefighter, error: firefighterError } = await supabase
-        .from('firefighters')
-        .select('id')
-        .eq('station_id', stationId)
-        .single();
-
-      if (firefighterError) {
-        console.error('Error getting firefighter record:', firefighterError);
-        throw firefighterError;
-      }
-
-      if (!firefighter) {
-        throw new Error('Firefighter station not found');
-      }
-
-      const { data, error } = await supabase
-        .from('emergency_calls')
-        .select('*')
-        .eq('station_id', firefighter.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setCallLogs(data || []);
-    } catch (error) {
-      console.error('Error loading call logs:', error);
-      Alert.alert('Error', 'Failed to load call logs');
-    }
-  };
 
   const loadCertificateApplications = async () => {
     try {
@@ -386,15 +354,6 @@ const FirefighterNotificationsScreen = () => {
   const renderMainButtons = () => (
     <View style={styles.mainButtonsContainer}>
       <TouchableOpacity
-        style={styles.mainButton}
-        onPress={() => setActiveView('callLogs')}
-      >
-        <Ionicons name="call-outline" size={32} color="#FFFFFF" />
-        <Text style={styles.mainButtonText}>Call Logs</Text>
-        <Text style={styles.mainButtonSubtext}>View missed, received, and dialed calls</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
         style={[styles.mainButton, { backgroundColor: '#4CAF50' }]}
         onPress={() => navigation.navigate('FirefighterTrainingApproval')}
       >
@@ -414,73 +373,6 @@ const FirefighterNotificationsScreen = () => {
     </View>
   );
 
-  const renderCallLogs = () => (
-    <View style={styles.viewContainer}>
-      <View style={styles.viewHeader}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => setActiveView(null)}
-        >
-          <Ionicons name="arrow-back" size={24} color="#4A5568" />
-          <Text style={styles.backButtonText}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.viewTitle}>Call Logs</Text>
-      </View>
-
-      <ScrollView
-        style={styles.scrollView}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
-      >
-        {callLogs.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="call-outline" size={48} color="#757575" />
-            <Text style={styles.emptyText}>No call logs found</Text>
-          </View>
-        ) : (
-          callLogs.map((log) => (
-            <Card key={log.id} style={styles.callLogCard}>
-              <Card.Content>
-                <View style={styles.callLogHeader}>
-                  <View style={styles.callLogInfo}>
-                    <Ionicons
-                      name={log.call_type === 'emergency' ? 'warning' : 'information-circle'}
-                      size={24}
-                      color={log.call_type === 'emergency' ? '#DC3545' : '#2196F3'}
-                    />
-                    <View style={styles.callLogDetails}>
-                      <Text style={styles.callLogType}>
-                        {log.call_type.toUpperCase()}
-                      </Text>
-                      <Text style={styles.callLogTime}>
-                        {formatDateTime(log.created_at)}
-                      </Text>
-                    </View>
-                  </View>
-                  <Badge
-                    style={[
-                      styles.callLogBadge,
-                      { backgroundColor: log.call_type === 'emergency' ? '#DC3545' : '#2196F3' }
-                    ]}
-                  >
-                    {log.status.toUpperCase()}
-                  </Badge>
-                </View>
-                <Text style={styles.callLogDescription}>{log.description}</Text>
-                {log.location && (
-                  <View style={styles.callLogLocation}>
-                    <Ionicons name="location-outline" size={16} color="#4A5568" />
-                    <Text style={styles.locationText}>{log.location}</Text>
-                  </View>
-                )}
-              </Card.Content>
-            </Card>
-          ))
-        )}
-      </ScrollView>
-    </View>
-  );
 
   const renderBookings = () => (
     <View style={styles.viewContainer}>
@@ -951,8 +843,6 @@ const FirefighterNotificationsScreen = () => {
 
       {activeView === null ? (
         renderMainButtons()
-      ) : activeView === 'callLogs' ? (
-        renderCallLogs()
       ) : activeView === 'bookings' ? (
         renderBookings()
       ) : (

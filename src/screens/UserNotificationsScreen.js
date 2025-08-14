@@ -14,14 +14,13 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 const UserNotificationsScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const [activeView, setActiveView] = useState(null); // 'callLogs' or 'bookings'
+  const [activeView, setActiveView] = useState(null); // 'bookings' only
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [userId, setUserId] = useState(null);
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [showBookingDetails, setShowBookingDetails] = useState(false);
-  const [callLogs, setCallLogs] = useState([]);
   const [bookingFilter, setBookingFilter] = useState('all'); // 'all', 'pending', 'confirmed', 'cancelled', 'completed', or station name
   const [dateFilter, setDateFilter] = useState(null); // Date object or null
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -106,21 +105,6 @@ const UserNotificationsScreen = () => {
     }
   };
 
-  const loadCallLogs = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('emergency_calls')
-        .select('*')
-        .eq('caller_id', userId)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setCallLogs(data || []);
-    } catch (error) {
-      console.error('Error loading call logs:', error);
-      Alert.alert('Error', 'Failed to load call logs');
-    }
-  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -159,11 +143,6 @@ const UserNotificationsScreen = () => {
     loadBookings();
   };
 
-  const handleShowCallLogs = () => {
-    setLoading(true);
-    setActiveView('callLogs');
-    loadCallLogs();
-  };
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -554,15 +533,6 @@ const UserNotificationsScreen = () => {
   const renderMainButtons = () => (
     <View style={styles.mainButtonsContainer}>
       <TouchableOpacity
-        style={[styles.mainButton, { backgroundColor: '#2196F3' }]}
-        onPress={handleShowCallLogs}
-      >
-        <Ionicons name="call-outline" size={32} color="#FFFFFF" />
-        <Text style={styles.mainButtonText}>Call Logs</Text>
-        <Text style={styles.mainButtonSubtext}>View missed, received, and dialed calls</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
         style={[styles.mainButton, { backgroundColor: '#4CAF50' }]}
         onPress={handleShowBookings}
       >
@@ -573,67 +543,6 @@ const UserNotificationsScreen = () => {
     </View>
   );
 
-  const renderCallLogs = () => (
-    <View style={styles.viewContainer}>
-      <View style={styles.viewHeader}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => setActiveView(null)}
-        >
-          <Ionicons name="arrow-back" size={24} color="#4A5568" />
-          <Text style={styles.backButtonText}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.viewTitle}>Call Logs</Text>
-        <Badge style={styles.badge}>
-          {callLogs.length} Total
-        </Badge>
-      </View>
-
-      <ScrollView
-        style={styles.scrollView}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
-      >
-        {callLogs.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="call-outline" size={48} color="#757575" />
-            <Text style={styles.emptyText}>No call logs found</Text>
-          </View>
-        ) : (
-          callLogs.map((log) => (
-            <Card key={log.id} style={styles.callLogCard}>
-              <Card.Content>
-                <View style={styles.callLogHeader}>
-                  <View style={styles.callLogInfo}>
-                    <Ionicons
-                      name={log.type === 'incoming' ? 'call-received' : 'call-made'}
-                      size={20}
-                      color={log.type === 'incoming' ? '#4CAF50' : '#2196F3'}
-                    />
-                    <Text style={styles.callLogType}>
-                      {log.type === 'incoming' ? 'Incoming' : 'Outgoing'}
-                    </Text>
-                  </View>
-                  <Text style={styles.callLogTime}>
-                    {formatCallTime(log.created_at)}
-                  </Text>
-                </View>
-                <View style={styles.callLogDetails}>
-                  <Text style={styles.callLogNumber}>{log.phone_number}</Text>
-                  {log.duration && (
-                    <Text style={styles.callLogDuration}>
-                      Duration: {Math.floor(log.duration / 60)}m {log.duration % 60}s
-                    </Text>
-                  )}
-                </View>
-              </Card.Content>
-            </Card>
-          ))
-        )}
-      </ScrollView>
-    </View>
-  );
 
   if (loading && !refreshing) {
     return (
@@ -653,8 +562,6 @@ const UserNotificationsScreen = () => {
           </View>
           {renderMainButtons()}
         </>
-      ) : activeView === 'callLogs' ? (
-        renderCallLogs()
       ) : (
         renderBookings()
       )}
