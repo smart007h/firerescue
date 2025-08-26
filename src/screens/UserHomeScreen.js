@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TextInput, ScrollView, TouchableOpacity, Image, Alert, Linking, Modal } from 'react-native';
+import { View, StyleSheet, TextInput, ScrollView, TouchableOpacity, Image, Alert, Linking, Modal, ActivityIndicator } from 'react-native';
 import { Text, IconButton, Card, Badge, Button, Avatar } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +20,7 @@ const UserHomeScreen = () => {
   const [nearbyStations, setNearbyStations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [locationLoading, setLocationLoading] = useState(false);
+  const [locationError, setLocationError] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [nearestStation, setNearestStation] = useState(null);
@@ -49,10 +50,28 @@ const UserHomeScreen = () => {
     }, [])
   );
 
+  // Fetch stations and address in parallel when userLocation changes
   useEffect(() => {
-    if (userLocation && userLocation.latitude && userLocation.longitude) {
-      loadNearbyStations(userLocation);
-    }
+    const fetchData = async () => {
+      if (userLocation && userLocation.latitude && userLocation.longitude) {
+        setLoading(true);
+        setLocationError(null);
+        try {
+          // Fetch address and stations in parallel
+          const [address, stationsResult] = await Promise.all([
+            getAddressFromCoordinates(userLocation.latitude, userLocation.longitude),
+            loadNearbyStations(userLocation, true),
+          ]);
+          setSelectedLocation({ ...userLocation, address });
+        } catch (err) {
+          setLocationError('Failed to load address or stations.');
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userLocation]);
 
   const handleLocationSelect = (data, details = null) => {
@@ -288,45 +307,34 @@ const UserHomeScreen = () => {
   };
 
   const handleGetCurrentLocation = async () => {
+    setLocationLoading(true);
+    setLocationError(null);
     try {
-      setLocationLoading(true);
       const coords = await getCurrentLocation();
-      
       if (!coords || typeof coords.latitude !== 'number' || typeof coords.longitude !== 'number') {
         throw new Error('Invalid location coordinates received');
       }
-      
       setUserLocation(coords);
       setMapRegion({
         ...coords,
         latitudeDelta: 0.01,
         longitudeDelta: 0.01,
       });
-
-      // Get address for the location
-      const address = await getAddressFromCoordinates(coords.latitude, coords.longitude);
-      setSelectedLocation({
-        ...coords,
-        address,
-      });
-
-      // Find nearest station based on current location
+      // Find nearest station based on current location (address and stations are fetched in parallel in useEffect)
       const nearest = await findNearestStation(coords.latitude, coords.longitude);
       setNearestStation(nearest);
     } catch (error) {
+      setLocationError(error.message || 'Failed to get location. Please try again.');
       console.error('Error getting current location:', error);
-      Alert.alert(
-        'Location Error',
-        error.message || 'Failed to get location. Please try again.'
-      );
     } finally {
       setLocationLoading(false);
     }
   };
 
   // Fetch all stations and find the 3 closest to the user
-  const loadNearbyStations = async (userCoords) => {
-    setLoading(true);
+  // If silent is true, don't set loading state (for parallel fetch)
+  const loadNearbyStations = async (userCoords, silent = false) => {
+    if (!silent) setLoading(true);
     try {
       // Fetch all active stations
       const { data: stations, error } = await supabase
@@ -338,7 +346,7 @@ const UserHomeScreen = () => {
       if (!stations || stations.length === 0) {
         setNearbyStations([]);
         setAllNearbyStations([]);
-        return;
+        return [];
       }
 
       // Fetch active incidents for all stations
@@ -371,11 +379,13 @@ const UserHomeScreen = () => {
 
       setAllNearbyStations(sortedStations);
       setNearbyStations(sortedStations.slice(0, 3));
+      return sortedStations;
     } catch (error) {
       console.error('Error loading nearby stations:', error);
-      Alert.alert('Error', 'Failed to load nearby stations');
+      if (!silent) Alert.alert('Error', 'Failed to load nearby stations');
+      return [];
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -528,7 +538,21 @@ const UserHomeScreen = () => {
               Current Location
             </Text>
           </View>
-          {userLocation && selectedLocation && selectedLocation.address && (
+          {locationLoading && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+              <ActivityIndicator size="small" color="#DC3545" />
+              <Text style={{ marginLeft: 8, color: '#DC3545', fontSize: 13 }}>Getting location...</Text>
+            </View>
+          )}
+          {locationError && (
+            <View style={{ marginTop: 6 }}>
+              <Text style={{ color: '#DC3545', fontSize: 13 }}>{locationError}</Text>
+              <TouchableOpacity onPress={handleGetCurrentLocation} style={{ marginTop: 4, alignSelf: 'flex-start' }}>
+                <Text style={{ color: '#3949AB', fontWeight: 'bold' }}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {userLocation && selectedLocation && selectedLocation.address && !locationLoading && !locationError && (
             <Text style={styles.locationSubtext}>{selectedLocation.address}</Text>
           )}
         </View>
