@@ -17,6 +17,7 @@ import {
 import { supabase } from '../config/supabaseClient';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
@@ -872,60 +873,240 @@ export default function ReportIncidentScreen() {
     // Upload images
     for (const image of formData.images) {
       try {
-        const fileExt = image.uri.split('.').pop();
-        const fileName = `${Math.random()}.${fileExt}`;
+        const fileExt = image.uri.split('.').pop() || 'jpg';
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
         const filePath = `${userId}/${fileName}`;
 
-        const { error: uploadError } = await supabase.storage
-          .from('incident-media')
-          .upload(filePath, {
-            uri: image.uri,
-            type: image.mimeType,
+        let uploadData;
+        let fileSize = 0;
+
+        // Try different upload methods based on available data
+        if (image.base64) {
+          // Use base64 data if available for React Native
+          console.log('Uploading image using base64 data');
+          
+          // Create a temporary file from base64 data using FileSystem
+          const base64Data = image.base64;
+          const tempFilePath = `${FileSystem.documentDirectory}temp_${fileName}`;
+          
+          // Write base64 data to temporary file
+          await FileSystem.writeAsStringAsync(tempFilePath, base64Data, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          
+          // Get file info
+          const fileInfo = await FileSystem.getInfoAsync(tempFilePath);
+          fileSize = fileInfo.size;
+          
+          console.log('Temporary file created:', { tempFilePath, fileSize: `${fileSize} bytes` });
+          
+          // Create FormData for React Native upload
+          const formData = new FormData();
+          formData.append('file', {
+            uri: tempFilePath,
+            type: image.mimeType || 'image/jpeg',
             name: fileName,
           });
 
-        if (!uploadError) {
-          const { data: { publicUrl } } = supabase.storage
-            .from('incident-media')
-            .getPublicUrl(filePath);
+          // Upload using the REST API
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) {
+            throw new Error('No authenticated session found');
+          }
 
+          const response = await fetch(`${supabase.supabaseUrl}/storage/v1/object/incident-media/${filePath}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: formData,
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('REST API upload failed:', response.status, errorText);
+            throw new Error(`Upload failed: ${response.status} ${errorText}`);
+          }
+          
+          // Clean up temporary file
+          await FileSystem.deleteAsync(tempFilePath, { idempotent: true });
+          
+        } else {
+          // Use URI with FormData for React Native compatibility
+          console.log('Uploading image using URI:', image.uri);
+          
+          // Get file info directly from URI
+          const fileInfo = await FileSystem.getInfoAsync(image.uri);
+          fileSize = fileInfo.size;
+          
+          if (fileSize === 0) {
+            throw new Error('Image file is empty');
+          }
+          
+          console.log('File info from URI:', { uri: image.uri, fileSize: `${fileSize} bytes` });
+          
+          // Create FormData for React Native upload
+          const formData = new FormData();
+          formData.append('file', {
+            uri: image.uri,
+            type: image.mimeType || 'image/jpeg',
+            name: fileName,
+          });
+
+          // Upload using the REST API
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) {
+            throw new Error('No authenticated session found');
+          }
+
+          const response = await fetch(`${supabase.supabaseUrl}/storage/v1/object/incident-media/${filePath}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: formData,
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('REST API upload failed:', response.status, errorText);
+            throw new Error(`Upload failed: ${response.status} ${errorText}`);
+          }
+        }
+
+        // Get public URL
+        const { data: { publicUrl } } = supabase.storage
+          .from('incident-media')
+          .getPublicUrl(filePath);
+
+        // Clean up the public URL to remove any spaces or formatting issues
+        const cleanedUrl = publicUrl.replace(/\s+/g, '').trim();
+        
+        console.log('Image upload successful:', { 
+          fileName,
+          originalUrl: publicUrl, 
+          cleanedUrl, 
+          filePath,
+          fileSize: `${fileSize} bytes`
+        });
+
+        // Save media record to database
+        const { error: dbError } = await supabase
+          .from('incident_media')
+          .insert({
+            incident_id: incidentId,
+            file_name: fileName,
+            file_path: filePath,
+            file_type: 'image',
+            file_size: fileSize,
+            mime_type: image.mimeType || 'image/jpeg',
+            public_url: cleanedUrl,
+            uploaded_by: userId
+          });
+
+        if (!dbError) {
           mediaUrls.push({
             type: 'image',
-            url: publicUrl
+            url: cleanedUrl
           });
+          console.log('Image uploaded and saved to database:', fileName);
+        } else {
+          console.error('Error saving image record to database:', dbError);
         }
       } catch (error) {
         console.error('Error uploading image:', error);
+        Alert.alert('Upload Error', `Failed to upload image: ${error.message}`);
       }
     }
 
     // Upload videos
     for (const video of formData.videos) {
       try {
-        const fileExt = video.uri.split('.').pop();
-        const fileName = `${Math.random()}.${fileExt}`;
+        const fileExt = video.uri.split('.').pop() || 'mp4';
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
         const filePath = `${userId}/${fileName}`;
 
-        const { error: uploadError } = await supabase.storage
-          .from('incident-media')
-          .upload(filePath, {
-            uri: video.uri,
-            type: video.mimeType,
-            name: fileName,
-          });
+        let fileSize = 0;
 
-        if (!uploadError) {
+        // Upload video using FormData for React Native compatibility
+        const fileInfo = await FileSystem.getInfoAsync(video.uri);
+        fileSize = fileInfo.size;
+        
+        if (fileSize === 0) {
+          throw new Error('Video file is empty');
+        }
+
+        console.log('Uploading video:', { fileName, uri: video.uri, fileSize: `${fileSize} bytes` });
+
+        // Create FormData for React Native upload
+        const formData = new FormData();
+        formData.append('file', {
+          uri: video.uri,
+          type: video.mimeType || 'video/mp4',
+          name: fileName,
+        });
+
+        // Upload using the REST API
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          throw new Error('No authenticated session found');
+        }
+
+        const response = await fetch(`${supabase.supabaseUrl}/storage/v1/object/incident-media/${filePath}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: formData,
+        });
+
+        if (response.ok) {
           const { data: { publicUrl } } = supabase.storage
             .from('incident-media')
             .getPublicUrl(filePath);
 
-          mediaUrls.push({
-            type: 'video',
-            url: publicUrl
+          // Clean up the public URL to remove any spaces or formatting issues
+          const cleanedUrl = publicUrl.replace(/\s+/g, '').trim();
+          
+          console.log('Video upload successful:', { 
+            fileName,
+            originalUrl: publicUrl, 
+            cleanedUrl, 
+            filePath,
+            fileSize: `${fileSize} bytes`
           });
+
+          // Save media record to database
+          const { error: dbError } = await supabase
+            .from('incident_media')
+            .insert({
+              incident_id: incidentId,
+              file_name: fileName,
+              file_path: filePath,
+              file_type: 'video',
+              file_size: fileSize,
+              mime_type: video.mimeType || 'video/mp4',
+              public_url: cleanedUrl,
+              uploaded_by: userId
+            });
+
+          if (!dbError) {
+            mediaUrls.push({
+              type: 'video',
+              url: cleanedUrl
+            });
+            console.log('Video uploaded and saved to database:', fileName);
+          } else {
+            console.error('Error saving video record to database:', dbError);
+          }
+        } else {
+          const errorText = await response.text();
+          console.error('REST API video upload failed:', response.status, errorText);
+          throw new Error(`Video upload failed: ${response.status} ${errorText}`);
         }
       } catch (error) {
         console.error('Error uploading video:', error);
+        Alert.alert('Upload Error', `Failed to upload video: ${error.message}`);
       }
     }
 
@@ -936,6 +1117,7 @@ export default function ReportIncidentScreen() {
           .from('incidents')
           .update({ media_urls: mediaUrls })
           .eq('id', incidentId);
+        console.log('Incident updated with media URLs:', mediaUrls.length, 'files');
       } catch (error) {
         console.error('Error updating incident with media URLs:', error);
       }

@@ -10,6 +10,7 @@ import {
   Dimensions,
   SafeAreaView,
   StatusBar,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
@@ -21,10 +22,13 @@ const FirefighterIncidentDetailsScreen = ({ route, navigation }) => {
   const { incidentId } = route.params;
   const { user } = useAuth();
   const [incident, setIncident] = useState(null);
+  const [incidentMedia, setIncidentMedia] = useState([]);
   const [reporter, setReporter] = useState(null);
   const [dispatcher, setDispatcher] = useState(null);
   const [loading, setLoading] = useState(true);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [imageModalVisible, setImageModalVisible] = useState(false);
+  const [selectedImageUrl, setSelectedImageUrl] = useState(null);
 
   useEffect(() => {
     loadIncidentDetails();
@@ -67,11 +71,35 @@ const FirefighterIncidentDetailsScreen = ({ route, navigation }) => {
         setDispatcher(dispatcherData);
       }
 
+      // Load incident media
+      await loadIncidentMedia();
+
     } catch (error) {
       console.error('Error loading incident details:', error);
       Alert.alert('Error', 'Failed to load incident details');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadIncidentMedia = async () => {
+    try {
+      console.log('Loading media for incident:', incidentId);
+      // Fetch media from incident_media table
+      const { data: mediaData, error: mediaError } = await supabase
+        .from('incident_media')
+        .select('*')
+        .eq('incident_id', incidentId)
+        .order('created_at', { ascending: false });
+
+      if (mediaError) {
+        console.error('Error fetching incident media:', mediaError);
+      } else {
+        console.log('Loaded incident media:', mediaData);
+        setIncidentMedia(mediaData || []);
+      }
+    } catch (error) {
+      console.error('Error loading incident media:', error);
     }
   };
 
@@ -387,22 +415,135 @@ const FirefighterIncidentDetailsScreen = ({ route, navigation }) => {
           </View>
         )}
 
-        {/* Media Images */}
-        {incident.media_urls && incident.media_urls.length > 0 && (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Incident Photos</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {incident.media_urls.map((url, index) => (
-                <Image
-                  key={index}
-                  source={{ uri: url }}
-                  style={styles.mediaImage}
-                  resizeMode="cover"
-                />
-              ))}
-            </ScrollView>
-          </View>
-        )}
+        {/* Media Images and Videos */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Incident Media</Text>
+          {(() => {
+            // Consolidate all media sources to avoid duplicates
+            // Priority: incidentMedia (newest) > media_urls (legacy) > media (oldest)
+            let allMedia = [];
+            
+            // First, add media from incident_media table (preferred source)
+            if (incidentMedia && incidentMedia.length > 0) {
+              incidentMedia.forEach((media, index) => {
+                // Clean up the URL by removing spaces and fixing formatting
+                let mediaUrl = media.public_url || media.file_url;
+                
+                // If public_url has issues, construct URL from file_path
+                if (!mediaUrl || mediaUrl.includes(' ')) {
+                  mediaUrl = `${supabase.supabaseUrl}/storage/v1/object/public/incident-media/${media.file_path}`;
+                } else {
+                  mediaUrl = mediaUrl.replace(/\s+/g, '').trim();
+                }
+                
+                allMedia.push({
+                  key: `media-${index}`,
+                  url: mediaUrl,
+                  type: media.file_type,
+                  source: 'incident_media',
+                  originalData: media
+                });
+              });
+            }
+            // Only use legacy formats if no media from incident_media table
+            else {
+              // Add legacy media_urls if no incident_media
+              if (incident.media_urls && incident.media_urls.length > 0) {
+                incident.media_urls.forEach((urlItem, index) => {
+                  // Handle both string URLs and object formats
+                  let rawUrl;
+                  if (typeof urlItem === 'string') {
+                    rawUrl = urlItem;
+                  } else if (urlItem && typeof urlItem === 'object') {
+                    rawUrl = urlItem.url || urlItem.uri || urlItem;
+                  } else {
+                    rawUrl = urlItem;
+                  }
+                  
+                  // Clean the URL to remove any spaces or formatting issues
+                  const cleanedUrl = typeof rawUrl === 'string' ? rawUrl.replace(/\s+/g, '').trim() : rawUrl;
+                  
+                  allMedia.push({
+                    key: `legacy-${index}`,
+                    url: cleanedUrl,
+                    type: 'image',
+                    source: 'media_urls',
+                    originalData: { urlItem, rawUrl }
+                  });
+                });
+              }
+              // Fallback to oldest .media format if no other sources
+              else if (incident.media && incident.media.length > 0) {
+                incident.media.forEach((mediaItem, index) => {
+                  const rawImageUrl = mediaItem.uri || mediaItem;
+                  const cleanedImageUrl = typeof rawImageUrl === 'string' ? rawImageUrl.replace(/\s+/g, '').trim() : rawImageUrl;
+                  
+                  allMedia.push({
+                    key: `old-${index}`,
+                    url: cleanedImageUrl,
+                    type: 'image',
+                    source: 'media',
+                    originalData: { mediaItem, rawImageUrl }
+                  });
+                });
+              }
+            }
+            
+            console.log('Consolidated media:', allMedia);
+            
+            return allMedia.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {allMedia.map((mediaItem) => {
+                  if (mediaItem.type?.startsWith('video/')) {
+                    return (
+                      <TouchableOpacity 
+                        key={mediaItem.key} 
+                        style={styles.mediaContainer}
+                        onPress={() => {
+                          // TODO: Implement video viewer
+                          Alert.alert('Video', 'Video playback coming soon');
+                        }}
+                      >
+                        <View style={[styles.mediaImage, styles.videoContainer]}>
+                          <Ionicons name="play-circle" size={50} color="#fff" />
+                          <Text style={styles.videoLabel}>Video</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  } else {
+                    return (
+                      <TouchableOpacity 
+                        key={mediaItem.key} 
+                        style={styles.mediaContainer}
+                        onPress={() => {
+                          setSelectedImageUrl(mediaItem.url);
+                          setImageModalVisible(true);
+                        }}
+                      >
+                        <Image
+                          source={{ uri: mediaItem.url }}
+                          style={styles.mediaImage}
+                          resizeMode="cover"
+                          onError={(error) => {
+                            console.error(`${mediaItem.source} image load error:`, error, 'URL:', mediaItem.url, 'Original:', mediaItem.originalData);
+                          }}
+                          onLoad={() => {
+                            console.log(`${mediaItem.source} image loaded successfully:`, mediaItem.url);
+                          }}
+                        />
+                      </TouchableOpacity>
+                    );
+                  }
+                })}
+              </ScrollView>
+            ) : null;
+          })() || (
+            <View style={styles.noMediaContainer}>
+              <Ionicons name="images-outline" size={48} color="#ccc" />
+              <Text style={styles.noMediaText}>No media attached to this incident</Text>
+            </View>
+          )}
+        </View>
 
         {/* Status Update Actions */}
         <View style={styles.card}>
@@ -439,6 +580,41 @@ const FirefighterIncidentDetailsScreen = ({ route, navigation }) => {
           </View>
         </View>
       </ScrollView>
+      
+      {/* Image Modal */}
+      <Modal
+        visible={imageModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setImageModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <TouchableOpacity 
+            style={styles.modalOverlay}
+            onPress={() => setImageModalVisible(false)}
+          >
+            <View style={styles.modalContent}>
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={() => setImageModalVisible(false)}
+              >
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+              
+              {selectedImageUrl && (
+                <Image
+                  source={{ uri: selectedImageUrl }}
+                  style={styles.fullImage}
+                  resizeMode="contain"
+                  onError={(error) => {
+                    console.error('Full image load error:', error);
+                  }}
+                />
+              )}
+            </View>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -579,6 +755,44 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginRight: 12,
   },
+  mediaContainer: {
+    marginRight: 12,
+  },
+  videoContainer: {
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  videoLabel: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  imagePlaceholder: {
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
+  placeholderText: {
+    color: '#ccc',
+    fontSize: 10,
+    marginTop: 4,
+  },
+  noMediaContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noMediaText: {
+    color: '#999',
+    fontSize: 14,
+    marginTop: 12,
+    textAlign: 'center',
+  },
   actionButtons: {
     gap: 12,
   },
@@ -637,6 +851,41 @@ const styles = StyleSheet.create({
     color: '#4CAF50',
     fontSize: 16,
     fontWeight: '600',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '95%',
+    height: '80%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    zIndex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullImage: {
+    width: '100%',
+    height: '100%',
   },
 });
 

@@ -10,6 +10,7 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [incidentDetails, setIncidentDetails] = useState(incident);
+  const [incidentMedia, setIncidentMedia] = useState([]);
   const [locationAddress, setLocationAddress] = useState('');
   const [addressLoading, setAddressLoading] = useState(false);
   const [reporterProfile, setReporterProfile] = useState(null);
@@ -88,12 +89,35 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
         throw error;
       }
       setIncidentDetails(data);
+      
+      // Load incident media from the incident_media table
+      await loadIncidentMedia(incident.id);
     } catch (error) {
       console.error('Error loading incident details:', error);
       Alert.alert('Error', 'Failed to load incident details');
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const loadIncidentMedia = async (incidentId) => {
+    try {
+      const { data, error } = await supabase
+        .from('incident_media')
+        .select('*')
+        .eq('incident_id', incidentId)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('Error loading incident media:', error);
+        return;
+      }
+
+      console.log('Loaded incident media:', data?.length || 0, 'files');
+      setIncidentMedia(data || []);
+    } catch (error) {
+      console.error('Error in loadIncidentMedia:', error);
     }
   };
 
@@ -351,13 +375,111 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
             }
           })()}
 
-          {/* Media Previews */}
-          {incidentDetails.media && Array.isArray(incidentDetails.media) && incidentDetails.media.length > 0 && (
+          {/* Media Previews - Support both old and new formats */}
+          {((incidentDetails.media && Array.isArray(incidentDetails.media) && incidentDetails.media.length > 0) ||
+            (incidentDetails.media_urls && Array.isArray(incidentDetails.media_urls) && incidentDetails.media_urls.length > 0) ||
+            (incidentMedia && incidentMedia.length > 0)) && (
             <View style={{ marginVertical: 12 }}>
               <Text style={{ fontWeight: 'bold', marginBottom: 6, fontSize: 16 }}>Media Attachments:</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {incidentDetails.media.map((media, idx) => (
-                  <View key={idx} style={{ marginRight: 12 }}>
+                {/* Display media from incident_media table (new format) */}
+                {incidentMedia && incidentMedia.map((media, idx) => (
+                  <View key={`db-${idx}`} style={{ marginRight: 12 }}>
+                    {media.file_type === 'image' ? (
+                      <TouchableOpacity onPress={() => console.log('View image:', media.public_url)}>
+                        <Image 
+                          source={{ uri: media.public_url }} 
+                          style={{ width: 200, height: 120, borderRadius: 8 }} 
+                          resizeMode="cover" 
+                        />
+                        <Text style={{ fontSize: 12, color: '#666', marginTop: 4, textAlign: 'center' }}>
+                          {media.file_name}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : media.file_type === 'video' ? (
+                      <TouchableOpacity onPress={() => console.log('View video:', media.public_url)}>
+                        <View style={{ 
+                          width: 200, 
+                          height: 120, 
+                          backgroundColor: '#000', 
+                          borderRadius: 8, 
+                          justifyContent: 'center', 
+                          alignItems: 'center' 
+                        }}>
+                          <Text style={{ color: '#fff', fontSize: 16 }}>▶️</Text>
+                          <Text style={{ color: '#fff', marginTop: 8 }}>Video</Text>
+                        </View>
+                        <Text style={{ fontSize: 12, color: '#666', marginTop: 4, textAlign: 'center' }}>
+                          {media.file_name}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={{ 
+                        width: 200, 
+                        height: 120, 
+                        backgroundColor: '#f0f0f0', 
+                        borderRadius: 8, 
+                        justifyContent: 'center', 
+                        alignItems: 'center' 
+                      }}>
+                        <Text style={{ color: '#666', marginTop: 8 }}>File</Text>
+                        <Text style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                          {media.file_name}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                ))}
+
+                {/* Display media from media_urls column (legacy format) */}
+                {incidentDetails.media_urls && incidentDetails.media_urls.map((media, idx) => (
+                  <View key={`url-${idx}`} style={{ marginRight: 12 }}>
+                    {media.type === 'image' ? (
+                      <TouchableOpacity onPress={() => console.log('View image:', media.url)}>
+                        <Image 
+                          source={{ uri: media.url }} 
+                          style={{ width: 200, height: 120, borderRadius: 8 }} 
+                          resizeMode="cover" 
+                        />
+                        <Text style={{ fontSize: 12, color: '#666', marginTop: 4, textAlign: 'center' }}>
+                          Legacy Image
+                        </Text>
+                      </TouchableOpacity>
+                    ) : media.type === 'video' ? (
+                      <TouchableOpacity onPress={() => console.log('View video:', media.url)}>
+                        <View style={{ 
+                          width: 200, 
+                          height: 120, 
+                          backgroundColor: '#000', 
+                          borderRadius: 8, 
+                          justifyContent: 'center', 
+                          alignItems: 'center' 
+                        }}>
+                          <Text style={{ color: '#fff', fontSize: 16 }}>▶️</Text>
+                          <Text style={{ color: '#fff', marginTop: 8 }}>Video</Text>
+                        </View>
+                        <Text style={{ fontSize: 12, color: '#666', marginTop: 4, textAlign: 'center' }}>
+                          Legacy Video
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={{ 
+                        width: 200, 
+                        height: 120, 
+                        backgroundColor: '#f0f0f0', 
+                        borderRadius: 8, 
+                        justifyContent: 'center', 
+                        alignItems: 'center' 
+                      }}>
+                        <Text style={{ color: '#666', marginTop: 8 }}>File</Text>
+                      </View>
+                    )}
+                  </View>
+                ))}
+
+                {/* Display media from legacy .media property (oldest format) */}
+                {incidentDetails.media && incidentDetails.media.map((media, idx) => (
+                  <View key={`legacy-${idx}`} style={{ marginRight: 12 }}>
                     {media.type && media.type.startsWith('image') ? (
                       <Image 
                         source={{ uri: media.url }} 
