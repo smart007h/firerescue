@@ -153,6 +153,83 @@ const CertificateApplicationScreen = () => {
     setFinalCost(parseFloat(finalCost.toFixed(2)));
   };
 
+  const findNearestStationForApplication = async (applicationLocation) => {
+    try {
+      console.log('Finding nearest station for location:', applicationLocation);
+      
+      // Get all active fire stations
+      const { data: stations, error } = await supabase
+        .from('firefighters')
+        .select('station_id, station_name, station_address, station_region, latitude, longitude')
+        .eq('is_active', true);
+
+      if (error) throw error;
+      if (!stations?.length) throw new Error('No fire stations found');
+
+      // Simple location matching based on address/region keywords
+      const locationLower = applicationLocation.toLowerCase();
+      
+      // Try to match by region/city keywords
+      const regionMatches = {
+        // Greater Accra Region (includes Accra, Tema, and surrounding areas)
+        'accra': ['FS001'], // Accra Central Station
+        'tema': ['FS001'], // Tema is part of Greater Accra, so goes to Accra station
+        'east legon': ['FS001'],
+        'adenta': ['FS001'],
+        'madina': ['FS001'],
+        'spintex': ['FS001'],
+        'greater accra': ['FS001'],
+        
+        // Other regions
+        'kumasi': ['FS002'], // Kumasi Central Station
+        'ashanti': ['FS002'],
+        'tamale': ['FS004'], // Northern Region
+        'northern': ['FS004'],
+        'cape coast': ['FS006'], // Central Region
+        'central': ['FS006'],
+        'sunyani': ['FS007'], // Brong Ahafo Region
+        'ho': ['FS008'], // Volta Region
+        'volta': ['FS008'],
+        'koforidua': ['FS009'], // Eastern Region
+        'eastern': ['FS009'],
+        'wa': ['FS010'] // Upper West Region
+      };
+
+      // Check for region matches first
+      for (const [region, stationIds] of Object.entries(regionMatches)) {
+        if (locationLower.includes(region)) {
+          // Return the first matching station ID
+          const matchingStation = stations.find(s => stationIds.includes(s.station_id));
+          if (matchingStation) {
+            console.log(`Matched station ${matchingStation.station_id} for region: ${region}`);
+            return matchingStation.station_id;
+          }
+        }
+      }
+
+      // If no specific region match, default to nearest by station priority
+      // Priority order: FS005 (Tema), FS001 (Accra Central), FS002 (Kumasi), others
+      const priorityOrder = ['FS005', 'FS001', 'FS002', 'FS003', 'FS004', 'FS006', 'FS007', 'FS008', 'FS009', 'FS010'];
+      
+      for (const stationId of priorityOrder) {
+        const station = stations.find(s => s.station_id === stationId);
+        if (station) {
+          console.log(`Default assignment to station: ${stationId}`);
+          return stationId;
+        }
+      }
+
+      // Last resort: use first available station
+      console.log(`Fallback assignment to station: ${stations[0].station_id}`);
+      return stations[0].station_id;
+
+    } catch (error) {
+      console.error('Error finding nearest station:', error);
+      // Default to FS005 (Tema) if all else fails
+      return 'FS005';
+    }
+  };
+
   const handleSubmitApplication = async () => {
     if (reviewFee <= 0) {
       Alert.alert("Error", "Please calculate the cost first");
@@ -187,6 +264,10 @@ const CertificateApplicationScreen = () => {
         return;
       }
 
+      // Determine the appropriate station for this application
+      const assignedStation = await findNearestStationForApplication(location.trim());
+      console.log('Assigned station for application:', assignedStation);
+
       // Prepare application data
       const applicationData = {
         applicant_id: user.id,
@@ -198,6 +279,7 @@ const CertificateApplicationScreen = () => {
         floors: floors, // Store as JSON
         review_fee: parseFloat(reviewFee),
         final_cost: parseFloat(finalCost),
+        station_id: assignedStation, // Automatically assign station
         status: 'pending'
       };
 

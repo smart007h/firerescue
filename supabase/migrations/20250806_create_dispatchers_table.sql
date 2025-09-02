@@ -52,9 +52,9 @@ GRANT ALL ON dispatchers TO service_role;
 
 -- Insert sample dispatchers
 INSERT INTO dispatchers (id, name, email, phone, station_id, is_active) VALUES
-('FS001', 'John Dispatcher', 'john.dispatcher@firerescue.com', '+233201234567', 'STATION_001', true),
-('FS002', 'Sarah Commander', 'sarah.commander@firerescue.com', '+233201234568', 'STATION_002', true),
-('FS003', 'Mike Controller', 'mike.controller@firerescue.com', '+233201234569', 'STATION_003', true)
+('FS001', 'John Dispatcher', 'john.dispatcher@firerescue.com', '+233201234567', 'FS001', true),
+('FS002', 'Sarah Commander', 'sarah.commander@firerescue.com', '+233201234568', 'FS002', true),
+('FS003', 'Mike Controller', 'mike.controller@firerescue.com', '+233201234569', 'FS003', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- Add comments for documentation

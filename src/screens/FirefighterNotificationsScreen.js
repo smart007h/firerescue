@@ -29,7 +29,7 @@ const FirefighterNotificationsScreen = () => {
   useEffect(() => {
     if (activeView === 'bookings' && stationId) {
       loadStationBookings();
-    } else if (activeView === 'certificates' && stationId) {
+    } else if (activeView === 'certificates') {
       loadCertificateApplications();
     }
   }, [activeView, stationId]);
@@ -223,7 +223,7 @@ const FirefighterNotificationsScreen = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      await Promise.all([loadStationBookings(), loadStationCallLogs()]);
+      await Promise.all([loadStationBookings()]);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -272,21 +272,64 @@ const FirefighterNotificationsScreen = () => {
 
   const loadCertificateApplications = async () => {
     try {
-      // Load all certificate applications (for now, until we implement station-based filtering)
+      console.log('🔍 === CERTIFICATE APPLICATIONS DEBUG ===');
+      console.log('Loading certificate applications for station:', stationId);
+      
+      if (!stationId) {
+        console.log('❌ No station ID available, skipping certificate loading');
+        setCertificates([]);
+        return;
+      }
+
+      console.log('✅ Station ID found:', stationId);
+
+      // Load applications filtered by station ID
+      console.log(`🔍 Querying applications for station ${stationId}...`);
+      
       const { data, error } = await supabase
         .from('certificate_applications')
         .select('*')
+        .eq('station_id', stationId)
         .order('created_at', { ascending: false });
-
+      
       if (error) {
-        console.error('Error loading certificates:', error);
+        // If station_id column doesn't exist, fall back to loading all applications
+        if (error.code === '42703') {
+          console.log('⚠️ station_id column not found! Loading all applications as fallback');
+          console.log('� To fix this: Execute the SQL script in add-station-column.sql');
+          
+          const { data: allData, error: fallbackError } = await supabase
+            .from('certificate_applications')
+            .select('*')
+            .order('created_at', { ascending: false });
+          
+          if (fallbackError) throw fallbackError;
+          setCertificates(allData || []);
+          return;
+        }
         throw error;
       }
 
+      console.log('✅ Station-specific query successful!');
+      console.log(`📊 Found ${data?.length || 0} applications for station ${stationId}`);
+      
+      if (data?.length === 0) {
+        console.log('⚠️ No applications found for this station.');
+        console.log(`   Station ${stationId} has no assigned applications yet.`);
+      } else {
+        console.log('📋 Applications loaded for station:', data.map(app => ({
+          id: app.id,
+          applicant: app.applicant_name,
+          location: app.premises_location,
+          station: app.station_id
+        })));
+      }
+
       setCertificates(data || []);
+
     } catch (error) {
-      console.error('Error loading certificate applications:', error);
-      Alert.alert('Error', 'Failed to load certificate applications');
+      console.error('❌ Error loading certificate applications:', error);
+      Alert.alert('Error', 'Failed to load certificate applications. Check console for details.');
       setCertificates([]);
     }
   };
@@ -1008,51 +1051,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     letterSpacing: 0.5,
-  },
-  callLogCard: {
-    marginBottom: 12,
-    elevation: 1,
-  },
-  callLogHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  callLogInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  callLogDetails: {
-    marginLeft: 8,
-  },
-  callLogType: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2D3748',
-  },
-  callLogTime: {
-    fontSize: 14,
-    color: '#718096',
-  },
-  callLogBadge: {
-    fontSize: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  callLogDescription: {
-    fontSize: 14,
-    color: '#4A5568',
-    marginBottom: 8,
-  },
-  callLogLocation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  locationText: {
-    marginLeft: 4,
-    fontSize: 14,
-    color: '#718096',
   },
   modalContainer: {
     flex: 1,
