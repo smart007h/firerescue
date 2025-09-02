@@ -128,11 +128,21 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
         }
         throw error;
       }
+      
       await loadIncidentDetails();
-      Alert.alert('Success', 'Incident status updated successfully');
-      if (newStatus === 'resolved' && typeof onStatusChange === 'function') {
-        onStatusChange();
-        navigation.goBack();
+      
+      Alert.alert('Success', `Incident ${newStatus === 'resolved' ? 'resolved' : 'updated'} successfully`);
+      
+      if (newStatus === 'resolved') {
+        // Call the callback to refresh dashboard
+        if (typeof onStatusChange === 'function') {
+          onStatusChange();
+        }
+        
+        // Navigate back to dashboard after a short delay
+        setTimeout(() => {
+          navigation.goBack();
+        }, 1500);
       }
     } catch (error) {
       console.error('Error updating incident status:', error);

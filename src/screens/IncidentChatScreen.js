@@ -9,12 +9,14 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const IncidentChatScreen = () => {
   const [messages, setMessages] = useState([]);
@@ -26,107 +28,197 @@ const IncidentChatScreen = () => {
   const { incidentId, returnTo } = route.params;
   const flatListRef = useRef(null);
   const [incident, setIncident] = useState(null);
-  const [otherParticipant, setOtherParticipant] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [userType, setUserType] = useState('user'); // 'user' or 'dispatcher'
+  const { user: authContextUser, userRole } = useAuth();
 
-  // Get current user from either AuthContext (dispatchers) or Supabase auth (civilians)
-  const { user: authContextUser, loading: contextLoading } = useAuth();
-
+  // Enhanced user detection for both civilian users and dispatchers
   useEffect(() => {
     const getCurrentUser = async () => {
       try {
-        setAuthLoading(true);
         
-        // First, try to get user from AuthContext (for dispatchers)
-        if (authContextUser && !contextLoading) {
+        // Check for dispatcher first (from AuthContext)
+        if (authContextUser && userRole === 'dispatcher') {
           setCurrentUser(authContextUser);
-          setAuthLoading(false);
+          setUserType('dispatcher');
           return;
         }
-        
-        // If no AuthContext user, try Supabase auth (for civilians)
+
+        // Check for regular user session
         const { data: { user }, error } = await supabase.auth.getUser();
         if (!error && user) {
           setCurrentUser(user);
-        } else {
-          console.log('No authenticated user found');
-          setCurrentUser(null);
+          setUserType('user');
+          return;
         }
-      } catch (error) {
-        console.error('Error getting current user:', error);
-        setCurrentUser(null);
-      } finally {
-        setAuthLoading(false);
+
+        // Check AsyncStorage for dispatcher session
+        const stationData = await AsyncStorage.getItem('stationData');
+        if (stationData) {
+          const station = JSON.parse(stationData);
+          setCurrentUser({ id: station.id, email: station.email, user_metadata: { full_name: station.name } });
+          setUserType('dispatcher');
+          return;
+        }
+
+        setError('Please log in to access chat');
+      } catch (err) {
+        console.error('Error getting current user:', err);
+        setError('Authentication error');
       }
     };
 
     getCurrentUser();
-  }, [authContextUser, contextLoading]);
+  }, [authContextUser, userRole]);
 
-  const isAuthenticated = !!currentUser;
-
-  // Only allow chat for reporter or assigned dispatcher
-  let notAllowedReason = '';
-  
-  // Get the user ID safely (handle both dispatcher and civilian user structures)
-  const getUserId = (user) => {
-    if (!user) return null;
-    // For dispatchers (AuthContext), use id directly
-    // For civilians (Supabase auth), use id
-    return user.id;
-  };
-
-  const currentUserId = getUserId(currentUser);
-  const isIncidentParticipant = !!currentUserId && !!incident &&
-    (currentUserId === incident.reported_by || currentUserId === incident.dispatcher_id);
-    
-  if (!isAuthenticated) {
-    notAllowedReason = 'You are not logged in.';
-  } else if (!!currentUser && !!incident) {
-    if (incident.status === 'resolved' || incident.status === 'cancelled') {
-      notAllowedReason = 'This incident has been resolved or cancelled. Chat is no longer available.';
-    } else if (currentUserId !== incident.reported_by && currentUserId !== incident.dispatcher_id) {
-      notAllowedReason = 'You are not allowed to participate in this chat because you are neither the reporter nor the assigned dispatcher for this incident.';
-    } else if (!incident.dispatcher_id) {
-      notAllowedReason = 'No dispatcher has been assigned to this incident yet.';
-    }
-  }
-
+  // Load incident and check permissions
   useEffect(() => {
-    if (!authLoading && incidentId) {
-    loadIncident();
+    if (currentUser && incidentId) {
+      loadIncident();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [incidentId, authLoading, currentUser]);
+  }, [currentUser, incidentId]);
 
+  // Load messages when we have incident and user
   useEffect(() => {
-    if (!authLoading && isAuthenticated && incident && isIncidentParticipant) {
+    if (currentUser && incident) {
       loadMessages();
+      
+      // Set up real-time subscription for new messages
+      console.log('[Chat] Setting up real-time subscription for incident:', incidentId);
+      
+      const subscription = supabase
+        .channel(`chat_${incidentId}`)
+        .on('postgres_changes', 
+          { 
+            event: 'INSERT', 
+            schema: 'public', 
+            table: 'chat_messages',
+            filter: `incident_id=eq.${incidentId}`
+          }, 
+          (payload) => {
+            console.log('[Chat] Real-time: New message received:', payload.new);
+            // Add a small delay to ensure the message is fully written to DB
+            setTimeout(() => {
+              loadMessages();
+            }, 500);
+          }
+        )
+        .on('postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public', 
+            table: 'chat_messages',
+            filter: `incident_id=eq.${incidentId}`
+          },
+          (payload) => {
+            console.log('[Chat] Real-time: Message updated:', payload.new);
+            setTimeout(() => {
+              loadMessages();
+            }, 500);
+          }
+        )
+        .subscribe((status) => {
+          console.log('[Chat] Subscription status:', status);
+        });
+
+      return () => {
+        console.log('[Chat] Cleaning up subscription');
+        subscription.unsubscribe();
+      };
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, isAuthenticated, incident, isIncidentParticipant]);
+  }, [currentUser, incident, incidentId]);
+
+  const loadIncident = async () => {
+    try {
+      console.log('[Chat] Loading incident:', incidentId);
+      const { data, error } = await supabase
+        .from('incidents')
+        .select('*')
+        .eq('id', incidentId)
+        .single();
+
+      if (error) {
+        console.error('[Chat] Error loading incident:', error);
+        setError('Failed to load incident details');
+        return;
+      }
+
+      console.log('[Chat] Incident loaded:', data);
+      setIncident(data);
+    } catch (err) {
+      console.error('[Chat] Error in loadIncident:', err);
+      setError('Failed to load incident');
+    }
+  };
 
   const loadMessages = async () => {
     try {
       setLoading(true);
+      console.log('[Chat] Loading messages for incident:', incidentId);
+      
+      // Use direct table query for now, fallback to view if needed
       const { data, error } = await supabase
         .from('chat_messages')
-        .select(`
-          *,
-          sender:sender_id (
-            email,
-            full_name,
-            role
-          )
-        `)
+        .select('*')
         .eq('incident_id', incidentId)
         .order('created_at', { ascending: true });
 
-      if (error) throw error;
-      setMessages(data || []);
+      if (error) {
+        console.error('[Chat] Error loading messages:', error);
+        setError('Failed to load messages');
+        return;
+      }
+
+      console.log('[Chat] Raw messages loaded:', data?.length || 0);
+      
+      // Process messages to add sender info manually
+      const processedMessages = await Promise.all((data || []).map(async (msg) => {
+        let senderName = 'Unknown User';
+        let senderEmail = '';
+        let role = msg.sender_type || 'user';
+        
+        if (msg.sender_type === 'dispatcher' || !msg.sender_type) {
+          // Try to get dispatcher info
+          const { data: dispatcherData } = await supabase
+            .from('dispatchers')
+            .select('name, email')
+            .eq('id', msg.sender_id)
+            .single();
+            
+          if (dispatcherData) {
+            senderName = dispatcherData.name;
+            senderEmail = dispatcherData.email;
+            role = 'dispatcher';
+          }
+        }
+        
+        if (role === 'user' || !senderName || senderName === 'Unknown User') {
+          // Try to get user info from profiles
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('full_name, email')
+            .eq('id', msg.sender_id)
+            .single();
+            
+          if (profileData) {
+            senderName = profileData.full_name || profileData.email;
+            senderEmail = profileData.email;
+            role = 'user';
+          }
+        }
+        
+        return {
+          ...msg,
+          sender_name: senderName,
+          sender_email: senderEmail,
+          role: role
+        };
+      }));
+
+      console.log('[Chat] Processed messages:', processedMessages);
+      setMessages(processedMessages);
     } catch (err) {
-      console.error('Error loading messages:', err);
+      console.error('[Chat] Error in loadMessages:', err);
       setError('Failed to load messages');
     } finally {
       setLoading(false);
@@ -134,140 +226,93 @@ const IncidentChatScreen = () => {
   };
 
   const sendMessage = async () => {
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || !currentUser) return;
+
+    const messageText = newMessage.trim();
+    setNewMessage(''); // Clear input immediately for better UX
 
     try {
-      if (!currentUser) {
-        alert('Not logged in. Please log in to send messages.');
+      console.log('[Chat] Sending message as:', userType, currentUser.id);
+      
+      // Create the message object
+      const messageData = {
+        incident_id: incidentId,
+        sender_id: currentUser.id,
+        sender_type: userType,
+        message: messageText,
+        created_at: new Date().toISOString(),
+      };
+
+      // Insert to database
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .insert(messageData)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[Chat] Error sending message:', error);
+        Alert.alert('Error', 'Failed to send message. Please try again.');
+        setNewMessage(messageText); // Restore message on error
         return;
       }
 
-      // For dispatchers, ensure they have a profile record before sending messages
-      if (currentUser.role === 'dispatcher') {
-        // First check by ID, then by email if ID check fails
-        let existingProfile = null;
-        
-        const { data: profileById, error: profileCheckError } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('id', currentUserId)
-          .maybeSingle();
-
-        if (profileCheckError && profileCheckError.code !== 'PGRST116') {
-          console.error('Error checking profile by ID:', profileCheckError);
-        }
-
-        existingProfile = profileById;
-
-        // If no profile found by ID, check by email (in case there's a profile with different ID)
-        if (!existingProfile) {
-          const { data: profileByEmail, error: emailCheckError } = await supabase
-            .from('profiles')
-            .select('id, email')
-            .eq('email', currentUser.email)
-            .maybeSingle();
-
-          if (emailCheckError && emailCheckError.code !== 'PGRST116') {
-            console.error('Error checking profile by email:', emailCheckError);
-          }
-
-          existingProfile = profileByEmail;
-
-          // If profile exists with different ID, update it to use the current user's ID
-          if (existingProfile && existingProfile.id !== currentUserId) {
-            const { error: updateError } = await supabase
-              .from('profiles')
-              .update({
-                id: currentUserId,
-                full_name: currentUser.user_metadata?.full_name || currentUser.email,
-                phone: currentUser.user_metadata?.phone,
-              })
-              .eq('email', currentUser.email);
-
-            if (updateError) {
-              console.error('Error updating existing profile:', updateError);
-            } else {
-              console.log('Updated existing profile with new ID');
-            }
-          }
-        }
-
-        // Create profile only if it doesn't exist at all
-        if (!existingProfile) {
-          const { error: profileError } = await supabase
-            .from('profiles')
-            .insert({
-              id: currentUserId,
-              email: currentUser.email,
-              full_name: currentUser.user_metadata?.full_name || currentUser.email,
-              phone: currentUser.user_metadata?.phone,
-              role: 'user' // Use 'user' role since dispatcher isn't allowed in profiles constraint
-            });
-
-          if (profileError) {
-            console.error('Error creating profile:', profileError);
-            setError('Failed to create user profile');
-            return;
-          } else {
-            console.log('Created new profile for dispatcher');
-          }
-        }
-      }
-
-      const { error } = await supabase
-        .from('chat_messages')
-        .insert({
-          incident_id: incidentId,
-          sender_id: currentUserId,
-          message: newMessage.trim(),
-          created_at: new Date().toISOString(),
-        });
-
-      if (error) throw error;
-      setNewMessage('');
-      await loadMessages();
+      console.log('[Chat] Message sent successfully:', data);
+      
+      // Immediately add the message to local state for instant feedback
+      const newMsg = {
+        ...data,
+        sender_name: userType === 'dispatcher' 
+          ? (currentUser.user_metadata?.full_name || 'Dispatcher')
+          : (currentUser.user_metadata?.full_name || currentUser.email || 'User'),
+        sender_email: currentUser.email,
+        role: userType
+      };
+      
+      setMessages(prev => [...prev, newMsg]);
+      
+      // Scroll to bottom
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+      
     } catch (err) {
-      console.error('Error sending message:', err);
-      setError('Failed to send message');
+      console.error('[Chat] Error in sendMessage:', err);
+      Alert.alert('Error', 'Failed to send message. Please try again.');
+      setNewMessage(messageText); // Restore message on error
     }
   };
 
-  const loadIncident = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('incidents')
-        .select('id, reported_by, dispatcher_id')
-        .eq('id', incidentId)
-        .maybeSingle();
-      if (!error && data) {
-        setIncident(data);
-        // Determine the other participant
-        if (currentUser && data.reported_by && data.dispatcher_id) {
-          // You may want to fetch reporter/dispatcher profiles separately if needed
-        }
-      } else if (error) {
-        console.error('Error loading incident for chat:', error);
-      }
-    } catch (err) {
-      console.error('Error loading incident for chat:', err);
+  // Check if user can participate in chat
+  const canParticipate = () => {
+    if (!currentUser || !incident) return false;
+    
+    const isReporter = currentUser.id === incident.reported_by;
+    const isDispatcher = currentUser.id === incident.dispatcher_id;
+    
+    return isReporter || isDispatcher;
+  };
+
+  // Determine chat partner info
+  const getChatPartner = () => {
+    if (!incident) return null;
+    
+    if (userType === 'dispatcher') {
+      return { name: 'Incident Reporter', role: 'Reporter' };
+    } else {
+      return { name: 'Emergency Dispatcher', role: 'Dispatcher' };
     }
   };
 
-  // Determine chat partner role for header
-  let chatHeader = 'Chat';
-  if (otherParticipant) {
-    if (otherParticipant.full_name) {
-      chatHeader = `Chat with ${otherParticipant.full_name}`;
-    } else if (otherParticipant.email) {
-      chatHeader = `Chat with ${otherParticipant.email}`;
-    }
-  }
+  // Determine chat header
+  const chatPartner = getChatPartner();
+  const chatHeader = chatPartner ? `Chat with ${chatPartner.name}` : 'Incident Chat';
 
   const renderMessage = ({ item }) => {
-    const isCurrentUser = item.sender_id === currentUserId;
-    // Determine role label: Check if sender is dispatcher by comparing with incident's dispatcher_id
-    const isDispatcher = item.sender_id === incident?.dispatcher_id;
-    const roleLabel = isCurrentUser ? 'You' : (isDispatcher ? 'Dispatcher' : 'User');
+    const isCurrentUser = item.sender_id === currentUser?.id;
+    const isDispatcher = item.role === 'dispatcher';
+    const roleLabel = isCurrentUser ? 'You' : (isDispatcher ? 'Dispatcher' : 'Reporter');
+    
     return (
       <View style={[
         styles.messageContainer,
@@ -276,10 +321,14 @@ const IncidentChatScreen = () => {
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
           {!isCurrentUser && (
             <Text style={styles.senderName}>
-              {item.sender?.full_name || item.sender?.email || 'Unknown User'}
+              {item.sender_name || 'Unknown User'}
             </Text>
           )}
-          <View style={[styles.roleBadge, isCurrentUser ? styles.roleBadgeYou : isDispatcher ? styles.roleBadgeDispatcher : styles.roleBadgeUser]}>
+          <View style={[
+            styles.roleBadge, 
+            isCurrentUser ? styles.roleBadgeYou : 
+            isDispatcher ? styles.roleBadgeDispatcher : styles.roleBadgeUser
+          ]}>
             <Text style={styles.roleBadgeText}>{roleLabel}</Text>
           </View>
         </View>
@@ -313,40 +362,41 @@ const IncidentChatScreen = () => {
     }
   };
 
-  if (authLoading) {
+  // Loading state
+  if (loading || !currentUser) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={handleBackPress}
-          >
+          <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{chatHeader}</Text>
         </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#DC3545" />
-          <Text style={styles.loadingText}>Loading authentication...</Text>
+          <Text style={styles.loadingText}>
+            {!currentUser ? 'Authenticating...' : 'Loading chat...'}
+          </Text>
         </View>
       </SafeAreaView>
     );
   }
 
+  // Error state
   if (error) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={handleBackPress}
-          >
+          <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{chatHeader}</Text>
         </View>
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>{error}</Text>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadMessages}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -355,27 +405,24 @@ const IncidentChatScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={handleBackPress}
-        >
+        <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{chatHeader}</Text>
+        <TouchableOpacity style={styles.refreshButton} onPress={loadMessages}>
+          <Ionicons name="refresh" size={20} color="#fff" />
+        </TouchableOpacity>
       </View>
 
-      {/* User Info Section */}
-      {otherParticipant && (
-        <View style={{ padding: 12, backgroundColor: '#f8f9fa', borderBottomWidth: 1, borderBottomColor: '#eee' }}>
-          <Text style={{ fontWeight: 'bold', fontSize: 16 }}>
-            {otherParticipant.full_name || otherParticipant.email}
+      {/* Chat Info */}
+      {incident && (
+        <View style={styles.chatInfo}>
+          <Text style={styles.chatInfoText}>
+            Incident ID: {incident.id?.substring(0, 8)}...
           </Text>
-          {otherParticipant.email && (
-            <Text style={{ color: '#666', fontSize: 14 }}>{otherParticipant.email}</Text>
-          )}
-          {otherParticipant.phone && (
-            <Text style={{ color: '#666', fontSize: 14 }}>{otherParticipant.phone}</Text>
-          )}
+          <Text style={styles.chatInfoText}>
+            Status: {incident.status || 'Active'}
+          </Text>
         </View>
       )}
 
@@ -400,31 +447,33 @@ const IncidentChatScreen = () => {
           placeholder="Type a message..."
           placeholderTextColor="#666"
           multiline
-          editable={isAuthenticated && isIncidentParticipant}
+          editable={canParticipate()}
         />
         <TouchableOpacity
           style={[
             styles.sendButton,
-            (!newMessage.trim() || !isAuthenticated || !isIncidentParticipant) && styles.sendButtonDisabled
+            (!newMessage.trim() || !canParticipate()) && styles.sendButtonDisabled
           ]}
           onPress={sendMessage}
-          disabled={!newMessage.trim() || !isAuthenticated || !isIncidentParticipant}
+          disabled={!newMessage.trim() || !canParticipate()}
         >
           <Ionicons
             name="send"
             size={24}
-            color={newMessage.trim() && isAuthenticated && isIncidentParticipant ? '#DC3545' : '#666'}
+            color={newMessage.trim() && canParticipate() ? '#DC3545' : '#666'}
           />
         </TouchableOpacity>
       </KeyboardAvoidingView>
 
-      {!isIncidentParticipant && (
-        <View style={{ padding: 16, alignItems: 'center' }}>
-          <Text style={{ color: '#DC3545', fontWeight: 'bold', textAlign: 'center' }}>
-            {notAllowedReason || 'You are not allowed to participate in this chat.'}
-          </Text>
-          <Text style={{ color: '#666', fontSize: 12, marginTop: 8 }}>
-            If you believe this is an error, please check that you are logged in as the correct user or dispatcher, and that the dispatcher is assigned to this incident.
+      {!canParticipate() && (
+        <View style={styles.notAllowedContainer}>
+          <Text style={styles.notAllowedText}>
+            {!incident 
+              ? 'Loading incident details...'
+              : !incident.dispatcher_id 
+                ? 'No dispatcher has been assigned to this incident yet.'
+                : 'You are not authorized to participate in this chat.'
+            }
           </Text>
         </View>
       )}
@@ -440,6 +489,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     padding: 16,
     backgroundColor: '#DC3545',
     borderBottomLeftRadius: 20,
@@ -451,10 +501,28 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
+  refreshButton: {
+    padding: 8,
+    marginLeft: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#fff',
+    flex: 1,
+    textAlign: 'center',
+  },
+  chatInfo: {
+    padding: 12,
+    backgroundColor: '#f8f9fa',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  chatInfoText: {
+    fontSize: 12,
+    color: '#666',
   },
   messagesList: {
     padding: 16,
@@ -530,11 +598,42 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
     color: '#666',
+    textAlign: 'center',
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#DC3545',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: '#DC3545',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  notAllowedContainer: {
+    padding: 16,
+    alignItems: 'center',
+    backgroundColor: '#fff2f2',
+    borderTopWidth: 1,
+    borderTopColor: '#ffebee',
+  },
+  notAllowedText: {
+    color: '#DC3545',
+    fontWeight: 'bold',
+    textAlign: 'center',
+    fontSize: 14,
   },
   roleBadge: {
     backgroundColor: '#eee',

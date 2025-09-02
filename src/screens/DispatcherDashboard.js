@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   StyleSheet,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../config/supabaseClient";
@@ -47,24 +48,27 @@ const DispatcherDashboard = () => {
             // Remove filter to listen to all incidents, we'll filter in the callback
           },
           (payload) => {
-            console.log('Real-time incident update received:', payload);
-            console.log('Event type:', payload.eventType);
-            console.log('Old status:', payload.old?.status);
-            console.log('New status:', payload.new?.status);
+            console.log('Real-time incident update received:', {
+              event: payload.eventType,
+              incidentId: payload.new?.id || payload.old?.id,
+              oldStatus: payload.old?.status,
+              newStatus: payload.new?.status,
+              dispatcherId: payload.new?.dispatcher_id || payload.old?.dispatcher_id
+            });
             
             // Check if this incident belongs to current dispatcher
             const incidentDispatcherId = payload.new?.dispatcher_id || payload.old?.dispatcher_id;
             if (incidentDispatcherId === dispatcherId) {
               console.log('Incident belongs to current dispatcher, refreshing list');
-              // Add a small delay to ensure database consistency
+              // Add a delay to ensure database consistency
               setTimeout(() => {
                 fetchActiveIncidents();
-              }, 500);
+              }, 1000); // Increased delay for better consistency
             }
           }
         )
         .subscribe((status) => {
-          console.log('Subscription status:', status);
+          console.log('Real-time subscription status:', status);
         });
 
       return () => {
@@ -87,34 +91,75 @@ const DispatcherDashboard = () => {
     }, [])
   );
 
-  const fetchActiveIncidents = async () => {
+  // Also refresh every 30 seconds to ensure fresh data
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchActiveIncidents(true); // Force refresh every 30 seconds
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchActiveIncidents = async (forceRefresh = false) => {
     setRefreshing(true);
     try {
       const dispatcherId = await AsyncStorage.getItem("userId");
-      console.log('Fetching active incidents for dispatcher:', dispatcherId);
       
       if (!dispatcherId) {
-        console.log('No dispatcher ID found - clearing incidents');
         setActiveIncidents([]);
         setRefreshing(false);
         return;
       }
 
-      // Query for active incidents (in_progress status only)
+      // Clear cache if force refresh
+      if (forceRefresh) {
+        setActiveIncidents([]);
+      }
+
+      // First check auth session
+      const { data: session } = await supabase.auth.getSession();
+
+      // Query for active incidents (in_progress and pending status)
       const { data, error } = await supabase
         .from("incidents")
         .select("*")
         .eq("dispatcher_id", dispatcherId)
-        .eq("status", "in_progress")
+        .in("status", ["in_progress", "pending"])
         .order("created_at", { ascending: false });
         
       if (error) {
         console.error('Error fetching active incidents:', error);
+        
+        // If it's an RLS error, try without dispatcher filter
+        if (error.message && error.message.includes('RLS')) {
+          const { data: fallbackData, error: fallbackError } = await supabase
+            .from("incidents")
+            .select("*")
+            .in("status", ["in_progress", "pending"])
+            .order("created_at", { ascending: false });
+            
+          if (!fallbackError && fallbackData) {
+            const filteredData = fallbackData.filter(incident => incident.dispatcher_id === dispatcherId);
+            
+            const incidentsWithFormattedLocations = await Promise.all(
+              (filteredData || []).map(async (incident) => {
+                try {
+                  const formattedLocation = await formatLocation(incident.location);
+                  return { ...incident, formattedLocation };
+                } catch (error) {
+                  return { ...incident, formattedLocation: incident.location };
+                }
+              })
+            );
+            
+            setActiveIncidents(incidentsWithFormattedLocations);
+            setRefreshing(false);
+            return;
+          }
+        }
+        
         throw error;
       }
-      
-      console.log(`Found ${data?.length || 0} active incidents for dispatcher ${dispatcherId}`);
-      console.log('Active incidents data:', data);
       
       // Format locations for all incidents
       const incidentsWithFormattedLocations = await Promise.all(
@@ -182,7 +227,7 @@ const DispatcherDashboard = () => {
   };
 
   const onRefresh = () => {
-    fetchActiveIncidents();
+    fetchActiveIncidents(true); // Force refresh on pull-to-refresh
   };
 
   const handleViewIncident = (incident) => {
@@ -190,8 +235,8 @@ const DispatcherDashboard = () => {
       incidentId: incident.id,
       incident,
       onStatusChange: () => {
-        // Refresh the dashboard when status changes
-        fetchActiveIncidents();
+        // Refresh the dashboard when status changes with force refresh
+        fetchActiveIncidents(true);
       }
     });
   };
@@ -218,17 +263,24 @@ const DispatcherDashboard = () => {
             </Text>
           ) : null}
         </View>
-        <TouchableOpacity style={styles.logoutButton} onPress={async () => {
-          try {
-            await signOut();
-            console.log('Dispatcher logged out successfully');
-            // Don't navigate manually - let AuthContext and AppNavigator handle it
-          } catch (error) {
-            console.error('Error logging out:', error);
-          }
-        }}>
-          <Ionicons name="log-out-outline" size={24} color="#DC3545" />
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity style={styles.refreshButton} onPress={() => {
+            fetchActiveIncidents(true); // Force refresh with cache clear
+          }}>
+            <Ionicons name="refresh-outline" size={20} color="#007AFF" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.logoutButton} onPress={async () => {
+            try {
+              await signOut();
+              console.log('Dispatcher logged out successfully');
+              // Don't navigate manually - let AuthContext and AppNavigator handle it
+            } catch (error) {
+              console.error('Error logging out:', error);
+            }
+          }}>
+            <Ionicons name="log-out-outline" size={24} color="#DC3545" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView>
@@ -384,6 +436,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#666666",
     marginTop: 4,
+  },
+  headerButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  refreshButton: {
+    padding: 8,
+    borderRadius: 6,
+    backgroundColor: "#e3f2fd",
   },
   logoutButton: {
     padding: 8,

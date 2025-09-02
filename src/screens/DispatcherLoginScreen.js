@@ -24,7 +24,7 @@ const DispatcherLoginScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(null);
-  const { updateDispatcherAuth, markAppRefresh } = useAuth();
+  const { updateDispatcherAuth, markAppRefresh, setUserRole } = useAuth();
 
   // Check for existing session on component mount
   useEffect(() => {
@@ -51,14 +51,15 @@ const DispatcherLoginScreen = ({ navigation }) => {
         email,
         password,
       });
-      console.log('After supabase.auth.signInWithPassword', data, authError);
 
       if (authError || !data.user) {
         setError(authError?.message || 'Invalid email or password');
         setLoading(false);
-        console.log('Login failed: Supabase Auth error or no user', authError, data.user);
         return;
       }
+
+      // Immediately set user role to prevent flash of wrong screen
+      setUserRole('dispatcher');
 
       // 2. Fetch dispatcher profile by user id (UUID)
       const { data: dispatcherData, error: dispatcherError } = await supabase
@@ -67,18 +68,15 @@ const DispatcherLoginScreen = ({ navigation }) => {
         .eq('id', data.user.id)
         .eq('is_active', true)
         .single();
-      console.log('After fetching dispatcher profile', dispatcherData, dispatcherError);
 
       if (dispatcherError || !dispatcherData) {
         setError('User is not an active dispatcher');
         setLoading(false);
-        console.log('Login failed: Not an active dispatcher', dispatcherError, dispatcherData);
         return;
       }
 
       // 3. Update the AuthContext with dispatcher data
       await updateDispatcherAuth(dispatcherData);
-      console.log('After updateDispatcherAuth');
 
       // Mark that we're setting up a session (for future app refreshes)
       await markAppRefresh();
@@ -88,19 +86,14 @@ const DispatcherLoginScreen = ({ navigation }) => {
       await AsyncStorage.setItem('userRole', 'dispatcher');
       await AsyncStorage.setItem('userId', dispatcherData.id);
       await AsyncStorage.setItem('userEmail', dispatcherData.email);
-      console.log('After AsyncStorage set');
 
       // 5. Navigate to dispatcher dashboard
-      console.log('Navigating to DispatcherDashboard');
       navigation.replace('DispatcherDashboard');
-      console.log('After navigation.replace');
     } catch (error) {
       console.error('Login error:', error);
       setError('Failed to login. Please try again.');
-      console.log('Login error caught in catch block');
     } finally {
       setLoading(false);
-      console.log('Loading set to false (finally block)');
     }
   };
 

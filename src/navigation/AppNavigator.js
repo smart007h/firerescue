@@ -533,32 +533,31 @@ const DispatcherStack = () => (
 
 // Main App Navigator
 const AppNavigator = () => {
-  const { userRole, loading, setNavigationRef } = useAuth();
+  const { userRole, loading, user } = useAuth();
   const [splashDone, setSplashDone] = useState(false);
-
-  console.log("[AppNavigator] userRole:", userRole, "loading:", loading, "splashDone:", splashDone);
 
   // Show splash screen while loading or splash not done
   if (loading || !splashDone) {
     return <CustomSplashScreen onFinish={() => setSplashDone(true)} />;
   }
 
+  // Show loading if user is authenticated but role is not set yet (prevents flash)
+  if (user && !userRole) {
+    return <LoadingScreen />;
+  }
+
   // Route based on user role
   switch (userRole) {
     case "user":
-      console.log("[AppNavigator] Rendering user stack");
       return <UserStack />;
       
     case "firefighter":
-      console.log("[AppNavigator] Rendering firefighter stack");
       return <FirefighterStack />;
       
     case "dispatcher":
-      console.log("[AppNavigator] Rendering dispatcher stack");
       return <DispatcherStack />;
       
     default:
-      console.log("[AppNavigator] Rendering auth stack");
       return <AuthStack />;
   }
 };

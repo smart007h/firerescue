@@ -100,91 +100,58 @@ export const AuthProvider = ({ children }) => {
       try {
         signOutCalledRef.current = false; // Reset guard on init
         
-        // Check if this is a fresh launch vs app refresh
-        const isAppRefresh = await AsyncStorage.getItem('app-refresh-flag');
+        // Always start with a clean slate to avoid infinite loops
+        console.log('[AuthContext] Initializing auth - clearing all sessions');
+        await clearAllSessions();
         
-        if (isAppRefresh) {
-          // This is an app refresh, keep existing auth
-          await AsyncStorage.removeItem('app-refresh-flag');
-          setFreshLaunch(false);
-        } else {
-          // This is a fresh launch, clear all sessions to force re-authentication
-          await clearAllSessions();
-          setFreshLaunch(true);
-          setAuthHydrated(true);
-          setLoading(false);
-          return;
-        }
+        // Set initial state immediately to prevent loops
+        setUser(null);
+        setSession(null);
+        setUserRole(null);
+        setFreshLaunch(true);
+        setAuthHydrated(true);
+        setLoading(false);
+        finished = true;
         
-        // Only proceed with auto-login if this was an app refresh
-        // First check for dispatcher authentication
-        const isDispatcherAuth = await checkDispatcherAuth();
-        if (isDispatcherAuth) {
-          setUserRole('dispatcher');
-          finished = true;
-          setAuthHydrated(true); // NEW: mark hydrated
-          return;
-        } else {
-          // Check for Supabase session (for regular users)
-          let session = null;
-          let retries = 3;
-          while (retries > 0) {
-            const { data } = await supabase.auth.getSession();
-            session = data.session;
-            if (session && session.user) break;
-            await new Promise(res => setTimeout(res, 300)); // wait 300ms
-            retries--;
-          }
-          if (session && session.user) {
-            setUser(session.user);
-            setUserRole('user');
-            finished = true;
-            setAuthHydrated(true); // NEW: mark hydrated
-            return;
-          } else {
-            // No valid session, clear userRole and sign out
-            setUserRole(null);
-            await signOut(true); // pass true to indicate called from init
-            finished = true;
-            setAuthHydrated(true); // NEW: mark hydrated
-            return;
-          }
-        }
+        console.log('[AuthContext] Auth initialization complete - redirecting to login');
+        return;
+        
       } catch (error) {
         console.error('Error initializing auth:', error);
-        await signOut(true);
+        setUser(null);
+        setSession(null);
         setUserRole(null);
+        setFreshLaunch(true);
+        setAuthHydrated(true);
+        setLoading(false);
         finished = true;
-        setAuthHydrated(true); // NEW: mark hydrated
       } finally {
         if (!finished) {
-          // Defensive: ensure loading is always set to false
           setLoading(false);
-        } else {
-          setLoading(false);
+          setAuthHydrated(true);
         }
       }
     };
 
     initializeAuth();
 
-    // Listen for auth state changes (only for regular users)
-    let lastSessionUserId = null; // NEW: track last session user id
-    const { subscription } = supabase.auth.onAuthStateChange(async (event, session) => {
-      const currentRole = await AsyncStorage.getItem('userRole');
-      if (currentRole !== 'dispatcher' && session == null) {
-        await signOut();
-        setLoading(false);
-      } else if (event === 'SIGNED_IN' && session?.user?.id !== lastSessionUserId) {
-        // Only update if user actually changed
+    // Simplified auth state listener - only for genuine auth events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Only handle actual sign-in events, but don't automatically set role
+      if (event === 'SIGNED_IN' && session?.user) {
         setUser(session.user);
-        setUserRole('user');
-        lastSessionUserId = session.user.id;
+        setSession(session);
+        // Don't set userRole to 'user' automatically - let login screens handle this
         setLoading(false);
-      } else {
-        // Session exists or dispatcher, not signing out
+        setAuthHydrated(true);
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setSession(null);
+        setUserRole(null);
+        setLoading(false);
+        setAuthHydrated(true);
       }
-      setAuthHydrated(true); // Always mark hydrated after any event
+      // Ignore other events to prevent loops
     });
 
     return () => {
