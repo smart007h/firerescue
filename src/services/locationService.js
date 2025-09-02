@@ -23,18 +23,10 @@ export const getCurrentLocation = async () => {
       throw new Error('Location permission denied');
     }
 
-    // Try to get last known location first for speed
-    let location = await Location.getLastKnownPositionAsync();
-    if (location && location.coords) {
-      const { latitude, longitude } = location.coords;
-      if (typeof latitude === 'number' && typeof longitude === 'number') {
-        return { latitude, longitude };
-      }
-    }
-
-    // If no last known location, fall back to high accuracy
+    let location;
     try {
       console.log('Attempting to get location with high accuracy...');
+      // Try to get a high-accuracy location first
       location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
         timeout: 15000, // 15-second timeout for high accuracy
@@ -53,6 +45,7 @@ export const getCurrentLocation = async () => {
     }
 
     const { latitude, longitude } = location.coords;
+    
     if (typeof latitude !== 'number' || typeof longitude !== 'number') {
       throw new Error('Invalid coordinates received');
     }

@@ -1201,7 +1201,7 @@ export default function ReportIncidentScreen() {
           onChangeText={(text) => setFormData({ ...formData, description: text })}
           multiline
           numberOfLines={3}
-          editable={true}
+          editable={!loading}
         />
       </View>,
       <View key="media" style={styles.formContainer}>

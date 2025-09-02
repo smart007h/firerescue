@@ -5,33 +5,31 @@ export const initializeAuth = async () => {
   try {
     // Get the current session
     const { data: { session }, error } = await supabase.auth.getSession();
+    
     if (error) throw error;
-    if (!session) {
-      // No session found, clear any stored session and prompt re-login
-      await AsyncStorage.removeItem('supabase-session');
-      await AsyncStorage.removeItem('userData');
-      return { session: null, error: new Error('No session found. Please log in.') };
+    
+    if (session) {
+      // Store the session
+      await AsyncStorage.setItem('supabase-session', JSON.stringify(session));
+      
+      // Get and store user data
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+        
+      if (profile) {
+        await AsyncStorage.setItem('userData', JSON.stringify({
+          id: session.user.id,
+          profile: profile
+        }));
+      }
     }
-    // Store the session
-    await AsyncStorage.setItem('supabase-session', JSON.stringify(session));
-    // Get and store user data
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', session.user.id)
-      .single();
-    if (profile) {
-      await AsyncStorage.setItem('userData', JSON.stringify({
-        id: session.user.id,
-        profile: profile
-      }));
-    }
+    
     return { session, error: null };
   } catch (error) {
     console.error('Error initializing auth:', error);
-    // Clear any possibly invalid session
-    await AsyncStorage.removeItem('supabase-session');
-    await AsyncStorage.removeItem('userData');
     return { session: null, error };
   }
 };
@@ -159,28 +157,23 @@ export const getCurrentUser = async () => {
     let session = sessionStr ? JSON.parse(sessionStr) : null;
 
     // If no session in storage or it's expired, try to get from Supabase
-    if (!session || !session.expires_at || new Date(session.expires_at * 1000) <= new Date()) {
+    if (!session || new Date(session.expires_at) <= new Date()) {
       const { data: { session: newSession }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) {
-        // Clear invalid session and prompt re-login
-        await AsyncStorage.removeItem('supabase-session');
-        await AsyncStorage.removeItem('user-profile');
-        return { data: null, error: new Error('Session expired or invalid. Please log in again.') };
-      }
+      
+      if (sessionError) throw sessionError;
+      
       if (newSession) {
         session = newSession;
         await AsyncStorage.setItem('supabase-session', JSON.stringify(newSession));
       } else {
         await AsyncStorage.removeItem('supabase-session');
         await AsyncStorage.removeItem('user-profile');
-        return { data: null, error: new Error('No session found. Please log in.') };
+        return { data: null, error: null };
       }
     }
 
     if (!session?.user) {
-      await AsyncStorage.removeItem('supabase-session');
-      await AsyncStorage.removeItem('user-profile');
-      return { data: null, error: new Error('No user found in session. Please log in.') };
+      return { data: null, error: null };
     }
 
     // Try to get profile from storage first
@@ -194,7 +187,9 @@ export const getCurrentUser = async () => {
         .select('*')
         .eq('id', session.user.id)
         .limit(1);
+
       if (profileError) throw profileError;
+
       profile = profiles?.[0];
       if (profile) {
         await AsyncStorage.setItem('user-profile', JSON.stringify(profile));
@@ -202,25 +197,22 @@ export const getCurrentUser = async () => {
     }
 
     if (!profile) {
-      await AsyncStorage.removeItem('user-profile');
-      throw new Error('Profile not found. Please log in again.');
+      throw new Error('Profile not found');
     }
 
-    return {
-      data: {
-        user: session.user,
+    return { 
+      data: { 
+        user: session.user, 
         profile,
-        session
-      },
-      error: null
+        session 
+      }, 
+      error: null 
     };
   } catch (error) {
     console.error('Get current user error:', error);
-    await AsyncStorage.removeItem('supabase-session');
-    await AsyncStorage.removeItem('user-profile');
-    return {
-      data: null,
-      error: error instanceof Error ? error : new Error('Unknown error occurred')
+    return { 
+      data: null, 
+      error: error instanceof Error ? error : new Error('Unknown error occurred') 
     };
   }
 };
