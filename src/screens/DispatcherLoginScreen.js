@@ -53,7 +53,11 @@ const DispatcherLoginScreen = ({ navigation }) => {
       });
 
       if (authError || !data.user) {
-        setError(authError?.message || 'Invalid email or password');
+        if (authError?.message?.includes('Invalid login credentials')) {
+          setError('The email or password you entered is incorrect. Please check your credentials and try again.');
+        } else {
+          setError('Login failed. Please verify your email and password and try again.');
+        }
         setLoading(false);
         return;
       }
@@ -70,7 +74,7 @@ const DispatcherLoginScreen = ({ navigation }) => {
         .single();
 
       if (dispatcherError || !dispatcherData) {
-        setError('User is not an active dispatcher');
+        setError('This account is not registered as an active dispatcher. Please contact your administrator.');
         setLoading(false);
         return;
       }
@@ -91,7 +95,7 @@ const DispatcherLoginScreen = ({ navigation }) => {
       navigation.replace('DispatcherDashboard');
     } catch (error) {
       console.error('Login error:', error);
-      setError('Failed to login. Please try again.');
+      setError('Login failed. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }

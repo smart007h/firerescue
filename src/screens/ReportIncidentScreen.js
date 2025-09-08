@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { useNavigation } from '@react-navigation/native';
+import { getNetworkErrorMessage, handleAsyncError, isConnectionError } from '../utils/errorHandler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
@@ -109,6 +110,9 @@ export default function ReportIncidentScreen() {
         }
       } catch (error) {
         console.error('Error fetching location suggestions:', error);
+        if (isConnectionError(error)) {
+          setError(getNetworkErrorMessage(error));
+        }
         setLocationSuggestions([]);
         setShowSuggestions(false);
       }
@@ -137,6 +141,10 @@ export default function ReportIncidentScreen() {
           setShowPlaceSuggestions(false);
         }
       } catch (error) {
+        console.error('Error fetching place suggestions:', error);
+        if (isConnectionError(error)) {
+          setError(getNetworkErrorMessage(error));
+        }
         setPlaceSuggestions([]);
         setShowPlaceSuggestions(false);
       }
@@ -254,6 +262,10 @@ export default function ReportIncidentScreen() {
       }
     } catch (error) {
       console.error('Google Geocoding API error:', error);
+      if (isConnectionError(error)) {
+        // Don't show error for geocoding failures, just use coordinates
+        console.warn('Network error during geocoding, using coordinates instead');
+      }
       return `Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
     }
   };
@@ -317,10 +329,11 @@ export default function ReportIncidentScreen() {
       Alert.alert('Success', 'Current location has been set');
     } catch (error) {
       console.error('Location error:', error);
-      Alert.alert(
-        'Location Error',
-        error.message || 'Failed to get location. Please try again.'
-      );
+      const errorMessage = isConnectionError(error) ? 
+        getNetworkErrorMessage(error) : 
+        (error.message || 'Failed to get location. Please try again.');
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -360,7 +373,10 @@ export default function ReportIncidentScreen() {
       Alert.alert('Success', 'Current location has been set.');
     } catch (error) {
       console.error('Error processing location:', error);
-      Alert.alert('Error', 'Failed to process location: ' + error.message);
+      const errorMessage = isConnectionError(error) ? 
+        getNetworkErrorMessage(error) : 
+        ('Failed to process location: ' + error.message);
+      setError(errorMessage);
     }
   };
 
@@ -494,8 +510,11 @@ export default function ReportIncidentScreen() {
         coordinates: { latitude, longitude },
       });
     } catch (error) {
-      setError('Error getting location. Please enter manually.');
       console.error('Error getting address from coordinates:', error);
+      const errorMessage = isConnectionError(error) ? 
+        getNetworkErrorMessage(error) : 
+        'Error getting location. Please enter manually.';
+      setError(errorMessage);
     }
   };
 
@@ -604,7 +623,10 @@ export default function ReportIncidentScreen() {
       }
     } catch (error) {
       console.error('Error selecting image:', error);
-      Alert.alert('Error', 'Error selecting image. Please try again.');
+      const errorMessage = isConnectionError(error) ? 
+        getNetworkErrorMessage(error) : 
+        'Error selecting image. Please try again.';
+      setError(errorMessage);
               }
             }
           },
@@ -613,7 +635,10 @@ export default function ReportIncidentScreen() {
       );
     } catch (error) {
       console.error('Error showing image picker options:', error);
-      Alert.alert('Error', 'Error showing image picker options. Please try again.');
+      const errorMessage = isConnectionError(error) ? 
+        getNetworkErrorMessage(error) : 
+        'Error showing image picker options. Please try again.';
+      setError(errorMessage);
     }
   };
 
@@ -669,7 +694,10 @@ export default function ReportIncidentScreen() {
                 }
               } catch (error) {
                 console.error('Error recording video:', error);
-                Alert.alert('Error', 'Error recording video. Please try again.');
+                const errorMessage = isConnectionError(error) ? 
+                  getNetworkErrorMessage(error) : 
+                  'Error recording video. Please try again.';
+                setError(errorMessage);
               }
             }
           },
@@ -718,7 +746,10 @@ export default function ReportIncidentScreen() {
       }
     } catch (error) {
       console.error('Error selecting video:', error);
-      Alert.alert('Error', 'Error selecting video. Please try again.');
+      const errorMessage = isConnectionError(error) ? 
+        getNetworkErrorMessage(error) : 
+        'Error selecting video. Please try again.';
+      setError(errorMessage);
               }
             }
           },
@@ -727,7 +758,10 @@ export default function ReportIncidentScreen() {
       );
     } catch (error) {
       console.error('Error showing video picker options:', error);
-      Alert.alert('Error', 'Error showing video picker options. Please try again.');
+      const errorMessage = isConnectionError(error) ? 
+        getNetworkErrorMessage(error) : 
+        'Error showing video picker options. Please try again.';
+      setError(errorMessage);
     }
   };
 
@@ -747,12 +781,12 @@ export default function ReportIncidentScreen() {
 
   const handleSubmit = async () => {
     if (!formData.location || !formData.incidentType || !formData.description) {
-      Alert.alert('Error', 'Please fill in all required fields');
+      setError('Please fill in all required fields');
       return;
     }
 
     if (!nearestStation) {
-      Alert.alert('Error', 'Unable to find nearest fire station. Please try again.');
+      setError('Unable to find nearest fire station. Please try again.');
       return;
     }
 
@@ -863,7 +897,10 @@ export default function ReportIncidentScreen() {
     } catch (error) {
       console.error('Error submitting incident:', error);
       setLoading(false);
-      Alert.alert('Error', 'Failed to submit incident. Please try again.');
+      const errorMessage = isConnectionError(error) ? 
+        getNetworkErrorMessage(error) : 
+        'Failed to submit incident. Please try again.';
+      setError(errorMessage);
     }
   };
 
@@ -1015,7 +1052,10 @@ export default function ReportIncidentScreen() {
         }
       } catch (error) {
         console.error('Error uploading image:', error);
-        Alert.alert('Upload Error', `Failed to upload image: ${error.message}`);
+        const errorMessage = isConnectionError(error) ? 
+          getNetworkErrorMessage(error) : 
+          `Failed to upload image: ${error.message}`;
+        setError(errorMessage);
       }
     }
 
@@ -1106,7 +1146,10 @@ export default function ReportIncidentScreen() {
         }
       } catch (error) {
         console.error('Error uploading video:', error);
-        Alert.alert('Upload Error', `Failed to upload video: ${error.message}`);
+        const errorMessage = isConnectionError(error) ? 
+          getNetworkErrorMessage(error) : 
+          `Failed to upload video: ${error.message}`;
+        setError(errorMessage);
       }
     }
 
@@ -1641,7 +1684,7 @@ export default function ReportIncidentScreen() {
               style={styles.confirmLocationUberButton}
               onPress={async () => {
                 if (!manualLocation.trim()) {
-                  Alert.alert('Error', 'Please enter a location');
+                  setError('Please enter a location');
                   return;
                 }
                 setLoading(true);

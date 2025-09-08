@@ -1,28 +1,37 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../config/supabaseClient';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function DispatcherLogin() {
   const navigation = useNavigation();
   const [dispatcherId, setDispatcherId] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleLogin = async () => {
     if (!dispatcherId || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+      setError('Please fill in all fields');
       return;
     }
 
     setLoading(true);
+    setError('');
+    
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: dispatcherId,
         password: password,
       });
 
-      if (error) throw error;
+      if (error) {
+        if (error.message?.includes('Invalid login credentials')) {
+          throw new Error('The email or password you entered is incorrect. Please check your credentials and try again.');
+        }
+        throw error;
+      }
 
       if (data.user) {
         // Check if user is a dispatcher
@@ -33,13 +42,13 @@ export default function DispatcherLogin() {
           .single();
 
         if (dispatcherError || !dispatcherData) {
-          throw new Error('User is not a dispatcher');
+          throw new Error('This account is not registered as an active dispatcher. Please contact your administrator.');
         }
 
         navigation.navigate('DispatcherDashboard');
       }
     } catch (error) {
-      Alert.alert('Error', error.message);
+      setError(error.message || 'Login failed. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -48,6 +57,13 @@ export default function DispatcherLogin() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Dispatcher Login</Text>
+      
+      {error ? (
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle" size={20} color="#e74c3c" style={styles.errorIcon} />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : null}
       
       <View style={styles.inputContainer}>
         <TextInput
@@ -135,5 +151,22 @@ const styles = StyleSheet.create({
   forgotPasswordText: {
     color: '#e74c3c',
     fontSize: 16,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffebee',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    width: '100%',
+  },
+  errorIcon: {
+    marginRight: 8,
+  },
+  errorText: {
+    color: '#e74c3c',
+    fontSize: 14,
+    flex: 1,
   },
 }); 

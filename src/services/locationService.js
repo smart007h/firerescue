@@ -1,6 +1,7 @@
 import * as Location from 'expo-location';
 import { supabase } from '../lib/supabase';
 import Constants from 'expo-constants';
+import { getNetworkErrorMessage, isConnectionError } from '../utils/errorHandler';
 
 // Get the API key from Expo Constants or environment variables
 const GOOGLE_MAPS_API_KEY = Constants.expoConfig?.extra?.googleMapsApiKey || 
@@ -56,6 +57,9 @@ export const getCurrentLocation = async () => {
     };
   } catch (error) {
     console.error('Error getting current location:', error);
+    if (isConnectionError(error)) {
+      throw new Error(getNetworkErrorMessage(error));
+    }
     throw error;
   }
 };
@@ -95,6 +99,9 @@ export const getAddressFromCoordinates = async (latitude, longitude) => {
         }
       } catch (googleError) {
         console.warn('Google Maps geocoding failed:', googleError.message);
+        if (isConnectionError(googleError)) {
+          console.warn('Network error during Google Maps geocoding');
+        }
       }
     }
     
@@ -162,6 +169,9 @@ export const searchLocationByAddress = async (address) => {
     throw new Error('Location not found');
   } catch (error) {
     console.error('Error searching location:', error);
+    if (isConnectionError(error)) {
+      throw new Error(getNetworkErrorMessage(error));
+    }
     throw error;
   }
 };

@@ -36,10 +36,15 @@ const UserLoginScreen = ({ navigation, route }) => {
 
     try {
       const { data, error } = await signInUser(formData.email, formData.password);
-      if (error) throw error;
+      if (error) {
+        if (error.message?.includes('Invalid login credentials')) {
+          throw new Error('The email or password you entered is incorrect. Please check your credentials and try again.');
+        }
+        throw error;
+      }
 
       if (data.profile.role !== 'user') {
-        throw new Error('Invalid account type. Please use civilian login.');
+        throw new Error('This account is not registered as a civilian user. Please use the appropriate login.');
       }
 
       // Set userRole in AsyncStorage
@@ -53,7 +58,7 @@ const UserLoginScreen = ({ navigation, route }) => {
 
       // Do not navigate; let AuthContext/AppNavigator handle stack switch
     } catch (err) {
-      setError(err.message || 'Failed to sign in');
+      setError(err.message || 'Login failed. Please check your connection and try again.');
     } finally {
       setLoading(false);
     }

@@ -244,7 +244,11 @@ export default function FirefighterLoginScreen() {
       setUserRole('firefighter');
     } catch (error) {
       console.error('Login error:', error);
-      setError(error.message || 'Failed to login');
+      if (error.message === 'Invalid station ID or password') {
+        setError('The station ID or password you entered is incorrect. Please check your credentials and try again.');
+      } else {
+        setError(error.message || 'Failed to login. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -271,6 +275,13 @@ export default function FirefighterLoginScreen() {
         </View>
 
           <View style={styles.formContainer}>
+            {error ? (
+              <View style={styles.messageContainer}>
+                <Ionicons name="alert-circle" size={20} color="#DC3545" style={styles.messageIcon} />
+                <Text style={styles.messageText}>{error}</Text>
+              </View>
+            ) : null}
+
             <View style={styles.inputContainer}>
               <Ionicons name="id-card" size={24} color="#666" style={styles.inputIcon} />
             <TextInput
@@ -471,5 +482,21 @@ const styles = StyleSheet.create({
   debugButtonText: {
     color: '#fff',
     fontSize: 14,
+  },
+  messageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffebee',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  messageIcon: {
+    marginRight: 8,
+  },
+  messageText: {
+    color: '#DC3545',
+    fontSize: 14,
+    flex: 1,
   },
 });
