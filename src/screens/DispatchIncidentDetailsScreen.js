@@ -126,6 +126,38 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
   };
 
   const handleStatusUpdate = async (newStatus) => {
+    // If incident is already resolved, prevent any status changes
+    if (incidentDetails.status === 'resolved') {
+      Alert.alert(
+        'Action Not Allowed', 
+        'This incident has been resolved and cannot be modified. Resolution is irreversible.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // If trying to resolve, show confirmation dialog
+    if (newStatus === 'resolved') {
+      Alert.alert(
+        'Confirm Resolution',
+        'Are you sure you want to resolve this incident? This action cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Resolve', 
+            style: 'destructive',
+            onPress: () => performStatusUpdate(newStatus)
+          }
+        ]
+      );
+      return;
+    }
+
+    // For other status changes, proceed normally
+    performStatusUpdate(newStatus);
+  };
+
+  const performStatusUpdate = async (newStatus) => {
     try {
       setLoading(true);
       await supabase.auth.getSession();
@@ -149,7 +181,7 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
       if (error) {
         if (error.message && error.message.toLowerCase().includes('jwt')) {
           Alert.alert('Connection Error', 'Failed to update incident status. Your session has expired. Please log in again.', [
-            { text: 'Retry', onPress: () => handleStatusUpdate(newStatus) },
+            { text: 'Retry', onPress: () => performStatusUpdate(newStatus) },
             { text: 'Cancel', style: 'cancel' },
           ]);
           return;
@@ -530,42 +562,53 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
 
         <View style={styles.actionsContainer}>
           <Text style={styles.actionsTitle}>Update Status</Text>
-          <View style={styles.actionButtons}>
-            <TouchableOpacity
-              style={[
-                styles.actionButton,
-                incidentDetails.status === 'in_progress' && styles.actionButtonActive,
-              ]}
-              onPress={() => handleStatusUpdate('in_progress')}
-              disabled={loading}
-            >
-              <Text
-                style={[
-                  styles.actionButtonText,
-                  incidentDetails.status === 'in_progress' && styles.actionButtonTextActive,
-                ]}
-              >
-                In Progress
+          {incidentDetails.status === 'resolved' ? (
+            <View style={styles.resolvedContainer}>
+              <Text style={styles.resolvedText}>
+                ✅ This incident has been resolved and cannot be modified.
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.actionButton,
-                incidentDetails.status === 'resolved' && styles.actionButtonActive,
-              ]}
-              onPress={() => handleStatusUpdate('resolved')}
-              disabled={loading}
-            >
-              <Text
-                style={[
-                  styles.actionButtonText,
-                  incidentDetails.status === 'resolved' && styles.actionButtonTextActive,
-                ]}
-              >
-                Resolved
+              <Text style={styles.resolvedSubText}>
+                Resolution is irreversible to maintain data integrity.
               </Text>
-            </TouchableOpacity>
-          </View>
+              {incidentDetails.resolved_at && (
+                <Text style={styles.resolvedDateText}>
+                  Resolved on: {new Date(incidentDetails.resolved_at).toLocaleString()}
+                </Text>
+              )}
+            </View>
+          ) : (
+            <View style={styles.actionButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.actionButton,
+                  incidentDetails.status === 'in_progress' && styles.actionButtonActive,
+                ]}
+                onPress={() => handleStatusUpdate('in_progress')}
+                disabled={loading}
+              >
+                <Text
+                  style={[
+                    styles.actionButtonText,
+                    incidentDetails.status === 'in_progress' && styles.actionButtonTextActive,
+                  ]}
+                >
+                  In Progress
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.actionButton,
+                  styles.resolveButton,
+                ]}
+                onPress={() => handleStatusUpdate('resolved')}
+                disabled={loading}
+              >
+                <Text style={[styles.actionButtonText, styles.resolveButtonText]}>
+                  ⚠️ Resolve (Irreversible)
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
           
           {/* Track Button */}
           <TouchableOpacity
@@ -721,6 +764,42 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 8,
     fontSize: 16,
+  },
+  resolvedContainer: {
+    backgroundColor: '#F0F9FF',
+    borderRadius: 8,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#34C759',
+    alignItems: 'center',
+  },
+  resolvedText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#34C759',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  resolvedSubText: {
+    fontSize: 14,
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  resolvedDateText: {
+    fontSize: 12,
+    color: '#888888',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  resolveButton: {
+    backgroundColor: '#FF6B6B',
+    borderWidth: 2,
+    borderColor: '#FF4757',
+  },
+  resolveButtonText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
   },
 });
 

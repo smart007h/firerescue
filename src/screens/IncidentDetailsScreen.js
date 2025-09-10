@@ -286,15 +286,63 @@ const IncidentDetailsScreen = ({ route, navigation }) => {
   }, []);
 
   const handleStatusUpdate = async (newStatus) => {
+    // If incident is already resolved, prevent any status changes
+    if (incidentDetails.status === 'resolved') {
+      Alert.alert(
+        'Action Not Allowed', 
+        'This incident has been resolved and cannot be modified. Resolution is irreversible.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // If trying to resolve, show confirmation dialog
+    if (newStatus === 'resolved') {
+      Alert.alert(
+        'Confirm Resolution',
+        'Are you sure you want to resolve this incident? This action cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Resolve', 
+            style: 'destructive',
+            onPress: () => performStatusUpdate(newStatus)
+          }
+        ]
+      );
+      return;
+    }
+
+    // For other status changes, proceed normally
+    performStatusUpdate(newStatus);
+  };
+
+  const performStatusUpdate = async (newStatus) => {
     try {
       setLoading(true);
+      
+      // Prepare update data
+      const updateData = { 
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      };
+      
+      // Add resolved_at timestamp if resolving
+      if (newStatus === 'resolved') {
+        updateData.resolved_at = new Date().toISOString();
+      }
+      
       const { error } = await supabase
         .from('incidents')
-        .update({ status: newStatus })
+        .update(updateData)
         .eq('id', actualIncidentId);
 
       if (error) throw error;
       await loadIncidentDetails();
+      
+      if (newStatus === 'resolved') {
+        Alert.alert('Success', 'Incident resolved successfully');
+      }
     } catch (error) {
       console.error('Error updating incident status:', error);
       Alert.alert('Error', 'Failed to update incident status');
@@ -581,59 +629,70 @@ const IncidentDetailsScreen = ({ route, navigation }) => {
           })()}
 
           <Text style={styles.sectionTitle}>Status Actions</Text>
-          <View style={styles.statusActions}>
-            <TouchableOpacity
-              style={[
-                styles.statusButton,
-                incidentDetails.status === 'active' && styles.statusButtonActive,
-              ]}
-              onPress={() => handleStatusUpdate('active')}
-              disabled={loading}
-            >
-              <Text
-                style={[
-                  styles.statusButtonText,
-                  incidentDetails.status === 'active' && styles.statusButtonTextActive,
-                ]}
-              >
-                Active
+          {incidentDetails.status === 'resolved' ? (
+            <View style={[styles.infoCard, { backgroundColor: '#F0F9FF', borderColor: '#34C759' }]}>
+              <Text style={[styles.infoText, { color: '#34C759', fontWeight: 'bold' }]}>
+                ✅ This incident has been resolved.
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.statusButton,
-                incidentDetails.status === 'in_progress' && styles.statusButtonActive,
-              ]}
-              onPress={() => handleStatusUpdate('in_progress')}
-              disabled={loading}
-            >
-              <Text
-                style={[
-                  styles.statusButtonText,
-                  incidentDetails.status === 'in_progress' && styles.statusButtonTextActive,
-                ]}
-              >
-                In Progress
+              <Text style={[styles.infoText, { fontSize: 14, marginTop: 4 }]}>
+                Resolution is irreversible to maintain data integrity.
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.statusButton,
-                incidentDetails.status === 'resolved' && styles.statusButtonActive,
-              ]}
-              onPress={() => handleStatusUpdate('resolved')}
-              disabled={loading}
-            >
-              <Text
+              {incidentDetails.resolved_at && (
+                <Text style={[styles.infoText, { fontSize: 12, marginTop: 4, fontStyle: 'italic' }]}>
+                  Resolved on: {new Date(incidentDetails.resolved_at).toLocaleString()}
+                </Text>
+              )}
+            </View>
+          ) : (
+            <View style={styles.statusActions}>
+              <TouchableOpacity
                 style={[
-                  styles.statusButtonText,
-                  incidentDetails.status === 'resolved' && styles.statusButtonTextActive,
+                  styles.statusButton,
+                  incidentDetails.status === 'active' && styles.statusButtonActive,
                 ]}
+                onPress={() => handleStatusUpdate('active')}
+                disabled={loading}
               >
-                Resolved
-              </Text>
-            </TouchableOpacity>
-          </View>
+                <Text
+                  style={[
+                    styles.statusButtonText,
+                    incidentDetails.status === 'active' && styles.statusButtonTextActive,
+                  ]}
+                >
+                  Active
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.statusButton,
+                  incidentDetails.status === 'in_progress' && styles.statusButtonActive,
+                ]}
+                onPress={() => handleStatusUpdate('in_progress')}
+                disabled={loading}
+              >
+                <Text
+                  style={[
+                    styles.statusButtonText,
+                    incidentDetails.status === 'in_progress' && styles.statusButtonTextActive,
+                  ]}
+                >
+                  In Progress
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.statusButton,
+                  { backgroundColor: '#FF6B6B', borderColor: '#FF4757' }
+                ]}
+                onPress={() => handleStatusUpdate('resolved')}
+                disabled={loading}
+              >
+                <Text style={[styles.statusButtonText, { color: '#FFFFFF', fontWeight: 'bold' }]}>
+                  ⚠️ Resolve (Irreversible)
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {isTrackingAvailable() && (
             <TouchableOpacity
