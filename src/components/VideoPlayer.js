@@ -9,53 +9,63 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 const VideoPlayer = ({ visible, videoUri, onClose, title = 'Video' }) => {
-  const [status, setStatus] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const videoRef = useRef(null);
+  
+  const player = useVideoPlayer(videoUri, (player) => {
+    player.loop = false;
+  });
 
-  const handlePlaybackStatusUpdate = (playbackStatus) => {
-    setStatus(playbackStatus);
-    
-    if (playbackStatus.isLoaded) {
-      setIsLoading(false);
-      setHasError(false);
-    } else if (playbackStatus.error) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  React.useEffect(() => {
+    const subscription = player.addListener('statusChange', (status) => {
+      setIsPlaying(status.isPlaying);
+      setCurrentTime(status.currentTime * 1000); // Convert to milliseconds for compatibility
+      if (status.duration) {
+        setDuration(status.duration * 1000); // Convert to milliseconds for compatibility
+        setIsLoading(false);
+      }
+    });
+
+    const errorSubscription = player.addListener('playbackError', (error) => {
       setIsLoading(false);
       setHasError(true);
-      console.error('Video playback error:', playbackStatus.error);
+      console.error('Video playback error:', error);
+    });
+
+    return () => {
+      subscription?.remove();
+      errorSubscription?.remove();
+    };
+  }, [player]);
+
+  const handlePlayPause = () => {
+    try {
+      if (isPlaying) {
+        player.pause();
+      } else {
+        player.play();
+      }
+    } catch (error) {
+      console.error('Error controlling video playback:', error);
+      Alert.alert('Error', 'Failed to control video playback');
     }
   };
 
-  const handlePlayPause = async () => {
-    if (videoRef.current) {
-      try {
-        if (status.isPlaying) {
-          await videoRef.current.pauseAsync();
-        } else {
-          await videoRef.current.playAsync();
-        }
-      } catch (error) {
-        console.error('Error controlling video playback:', error);
-        Alert.alert('Error', 'Failed to control video playback');
-      }
-    }
-  };
-
-  const handleClose = async () => {
-    if (videoRef.current) {
-      try {
-        await videoRef.current.stopAsync();
-        await videoRef.current.unloadAsync();
-      } catch (error) {
-        console.error('Error stopping video:', error);
-      }
+  const handleClose = () => {
+    try {
+      player.pause();
+    } catch (error) {
+      console.error('Error stopping video:', error);
     }
     setIsLoading(true);
     setHasError(false);
@@ -107,15 +117,13 @@ const VideoPlayer = ({ visible, videoUri, onClose, title = 'Video' }) => {
               </View>
             ) : (
               <>
-                <Video
-                  ref={videoRef}
-                  source={{ uri: videoUri }}
+                <VideoView
                   style={styles.video}
-                  resizeMode={ResizeMode.CONTAIN}
-                  shouldPlay={false}
-                  isLooping={false}
-                  useNativeControls={false}
-                  onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
+                  player={player}
+                  allowsFullscreen={false}
+                  allowsPictureInPicture={false}
+                  showsTimecodes={false}
+                  requiresLinearPlayback={false}
                 />
                 
                 {isLoading && (
@@ -126,14 +134,14 @@ const VideoPlayer = ({ visible, videoUri, onClose, title = 'Video' }) => {
                 )}
 
                 {/* Custom Controls */}
-                {!isLoading && status.isLoaded && (
+                {!isLoading && duration > 0 && (
                   <View style={styles.controls}>
                     <TouchableOpacity 
                       onPress={handlePlayPause}
                       style={styles.playButton}
                     >
                       <Ionicons 
-                        name={status.isPlaying ? "pause" : "play"} 
+                        name={isPlaying ? "pause" : "play"} 
                         size={40} 
                         color="#fff" 
                       />
@@ -142,22 +150,22 @@ const VideoPlayer = ({ visible, videoUri, onClose, title = 'Video' }) => {
                     {/* Progress Bar */}
                     <View style={styles.progressContainer}>
                       <Text style={styles.timeText}>
-                        {formatTime(status.positionMillis)}
+                        {formatTime(currentTime)}
                       </Text>
                       <View style={styles.progressBar}>
                         <View 
                           style={[
                             styles.progressFill, 
                             { 
-                              width: status.durationMillis 
-                                ? `${(status.positionMillis / status.durationMillis) * 100}%` 
+                              width: duration 
+                                ? `${(currentTime / duration) * 100}%` 
                                 : '0%' 
                             }
                           ]} 
                         />
                       </View>
                       <Text style={styles.timeText}>
-                        {formatTime(status.durationMillis)}
+                        {formatTime(duration)}
                       </Text>
                     </View>
                   </View>

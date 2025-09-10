@@ -20,7 +20,7 @@ const UserSelectionScreen = ({ navigation }) => {
         if (data.profile.role === 'firefighter') {
           navigation.replace('FirefighterMain');
         } else {
-          navigation.navigate('UserMain', { screen: 'Home' });
+          navigation.navigate('UserMain', { screen: 'UserHome' });
         }
       }
     } catch (error) {
