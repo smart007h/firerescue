@@ -2,6 +2,7 @@ const React = require('react');
 const { useState, useEffect } = React;
 const { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, RefreshControl, Image } = require('react-native');
 const { supabase } = require('../lib/supabase');
+const VideoPlayer = require('../components/VideoPlayer').default;
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -15,6 +16,9 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
   const [addressLoading, setAddressLoading] = useState(false);
   const [reporterProfile, setReporterProfile] = useState(null);
   const [showFullDescription, setShowFullDescription] = useState(false);
+  const [videoModalVisible, setVideoModalVisible] = useState(false);
+  const [selectedVideoUrl, setSelectedVideoUrl] = useState(null);
+  const [selectedVideoTitle, setSelectedVideoTitle] = useState('');
 
   const getAddressFromCoords = async (latitude, longitude) => {
     try {
@@ -397,7 +401,11 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
                         </Text>
                       </TouchableOpacity>
                     ) : media.file_type === 'video' ? (
-                      <TouchableOpacity onPress={() => console.log('View video:', media.public_url)}>
+                      <TouchableOpacity onPress={() => {
+                        setSelectedVideoUrl(media.public_url);
+                        setSelectedVideoTitle(media.file_name || 'Incident Video');
+                        setVideoModalVisible(true);
+                      }}>
                         <View style={{ 
                           width: 200, 
                           height: 120, 
@@ -446,7 +454,11 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
                         </Text>
                       </TouchableOpacity>
                     ) : media.type === 'video' ? (
-                      <TouchableOpacity onPress={() => console.log('View video:', media.url)}>
+                      <TouchableOpacity onPress={() => {
+                        setSelectedVideoUrl(media.url);
+                        setSelectedVideoTitle('Incident Video');
+                        setVideoModalVisible(true);
+                      }}>
                         <View style={{ 
                           width: 200, 
                           height: 120, 
@@ -564,6 +576,18 @@ const DispatchIncidentDetailsScreen = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      
+      {/* Video Player Modal */}
+      <VideoPlayer
+        visible={videoModalVisible}
+        videoUri={selectedVideoUrl}
+        title={selectedVideoTitle}
+        onClose={() => {
+          setVideoModalVisible(false);
+          setSelectedVideoUrl(null);
+          setSelectedVideoTitle('');
+        }}
+      />
     </View>
   );
 };

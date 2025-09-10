@@ -15,6 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import VideoPlayer from '../components/VideoPlayer';
 
 const { width } = Dimensions.get('window');
 
@@ -29,6 +30,9 @@ const FirefighterIncidentDetailsScreen = ({ route, navigation }) => {
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [imageModalVisible, setImageModalVisible] = useState(false);
   const [selectedImageUrl, setSelectedImageUrl] = useState(null);
+  const [videoModalVisible, setVideoModalVisible] = useState(false);
+  const [selectedVideoUrl, setSelectedVideoUrl] = useState(null);
+  const [selectedVideoTitle, setSelectedVideoTitle] = useState('');
 
   useEffect(() => {
     loadIncidentDetails();
@@ -494,14 +498,18 @@ const FirefighterIncidentDetailsScreen = ({ route, navigation }) => {
             return allMedia.length > 0 ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 {allMedia.map((mediaItem) => {
-                  if (mediaItem.type?.startsWith('video/')) {
+                  const isVideo = mediaItem.type === 'video' || 
+                                mediaItem.type?.startsWith('video/') || 
+                                mediaItem.originalData?.mime_type?.startsWith('video/');
+                  if (isVideo) {
                     return (
                       <TouchableOpacity 
                         key={mediaItem.key} 
                         style={styles.mediaContainer}
                         onPress={() => {
-                          // TODO: Implement video viewer
-                          Alert.alert('Video', 'Video playback coming soon');
+                          setSelectedVideoUrl(mediaItem.url);
+                          setSelectedVideoTitle(mediaItem.originalData?.file_name || 'Incident Video');
+                          setVideoModalVisible(true);
                         }}
                       >
                         <View style={[styles.mediaImage, styles.videoContainer]}>
@@ -615,6 +623,18 @@ const FirefighterIncidentDetailsScreen = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
       </Modal>
+      
+      {/* Video Player Modal */}
+      <VideoPlayer
+        visible={videoModalVisible}
+        videoUri={selectedVideoUrl}
+        title={selectedVideoTitle}
+        onClose={() => {
+          setVideoModalVisible(false);
+          setSelectedVideoUrl(null);
+          setSelectedVideoTitle('');
+        }}
+      />
     </SafeAreaView>
   );
 };

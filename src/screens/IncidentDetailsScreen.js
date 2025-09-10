@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../config/supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import VideoPlayer from '../components/VideoPlayer';
 
 const IncidentDetailsScreen = ({ route, navigation }) => {
   const { incident, incidentId } = route.params || {};
@@ -25,6 +26,9 @@ const IncidentDetailsScreen = ({ route, navigation }) => {
   const [isCivilianUser, setIsCivilianUser] = useState(false);
   const [imageModalVisible, setImageModalVisible] = useState(false);
   const [selectedImageUrl, setSelectedImageUrl] = useState(null);
+  const [videoModalVisible, setVideoModalVisible] = useState(false);
+  const [selectedVideoUrl, setSelectedVideoUrl] = useState(null);
+  const [selectedVideoTitle, setSelectedVideoTitle] = useState('');
 
   // Get the actual incident ID - either from the incident object or the incidentId parameter
   const actualIncidentId = incident?.id || incidentId;
@@ -526,13 +530,18 @@ const IncidentDetailsScreen = ({ route, navigation }) => {
                 <Text style={styles.sectionTitle}>Incident Media</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   {allMedia.map((mediaItem) => {
-                    if (mediaItem.type?.startsWith('video/')) {
+                    const isVideo = mediaItem.type === 'video' || 
+                                  mediaItem.type?.startsWith('video/') || 
+                                  mediaItem.originalData?.mime_type?.startsWith('video/');
+                    if (isVideo) {
                       return (
                         <TouchableOpacity 
                           key={mediaItem.key} 
                           style={styles.mediaContainer}
                           onPress={() => {
-                            Alert.alert('Video', 'Video playback coming soon');
+                            setSelectedVideoUrl(mediaItem.url);
+                            setSelectedVideoTitle(mediaItem.originalData?.file_name || 'Incident Video');
+                            setVideoModalVisible(true);
                           }}
                         >
                           <View style={[styles.mediaImage, styles.videoContainer]}>
@@ -689,6 +698,18 @@ const IncidentDetailsScreen = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
       </Modal>
+      
+      {/* Video Player Modal */}
+      <VideoPlayer
+        visible={videoModalVisible}
+        videoUri={selectedVideoUrl}
+        title={selectedVideoTitle}
+        onClose={() => {
+          setVideoModalVisible(false);
+          setSelectedVideoUrl(null);
+          setSelectedVideoTitle('');
+        }}
+      />
     </View>
   );
 };

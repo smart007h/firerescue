@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../config/supabaseClient';
+import VideoPlayer from '../components/VideoPlayer';
 
 export default function CivilianIncidentDetails() {
   const navigation = useNavigation();
@@ -26,6 +27,9 @@ export default function CivilianIncidentDetails() {
   const [stationInfo, setStationInfo] = useState(null);
   const [imageModalVisible, setImageModalVisible] = useState(false);
   const [selectedImageUrl, setSelectedImageUrl] = useState(null);
+  const [videoModalVisible, setVideoModalVisible] = useState(false);
+  const [selectedVideoUrl, setSelectedVideoUrl] = useState(null);
+  const [selectedVideoTitle, setSelectedVideoTitle] = useState('');
 
   const loadIncidentDetails = async () => {
     try {
@@ -307,13 +311,18 @@ export default function CivilianIncidentDetails() {
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 {allMedia.map((mediaItem) => {
-                  if (mediaItem.type?.startsWith('video/')) {
+                  const isVideo = mediaItem.type === 'video' || 
+                                mediaItem.type?.startsWith('video/') || 
+                                mediaItem.originalData?.mime_type?.startsWith('video/');
+                  if (isVideo) {
                     return (
                       <TouchableOpacity 
                         key={mediaItem.key} 
                         style={styles.mediaContainer}
                         onPress={() => {
-                          Alert.alert('Video', 'Video playback coming soon');
+                          setSelectedVideoUrl(mediaItem.url);
+                          setSelectedVideoTitle(mediaItem.originalData?.file_name || 'Incident Video');
+                          setVideoModalVisible(true);
                         }}
                       >
                         <View style={[styles.mediaImage, styles.videoContainer]}>
@@ -444,6 +453,18 @@ export default function CivilianIncidentDetails() {
           </TouchableOpacity>
         </View>
       </Modal>
+      
+      {/* Video Player Modal */}
+      <VideoPlayer
+        visible={videoModalVisible}
+        videoUri={selectedVideoUrl}
+        title={selectedVideoTitle}
+        onClose={() => {
+          setVideoModalVisible(false);
+          setSelectedVideoUrl(null);
+          setSelectedVideoTitle('');
+        }}
+      />
     </SafeAreaView>
   );
 }
