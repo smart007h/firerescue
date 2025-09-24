@@ -54,7 +54,8 @@
     },
     "plugins": [
       "expo-location",
-      "expo-image-picker"
+      "expo-image-picker",
+      "expo-asset"
     ]
   }
 }

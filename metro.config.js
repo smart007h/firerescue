@@ -1,5 +1,4 @@
 const { getDefaultConfig } = require('expo/metro-config');
-const path = require('path');
 
 const config = getDefaultConfig(__dirname);
 
@@ -18,8 +17,8 @@ config.resolver.platforms = ['ios', 'android', 'native', 'web'];
 
 // Ensure proper asset resolution
 config.resolver.alias = {
-  '@assets': path.resolve(__dirname, 'src/assets'),
-  '@images': path.resolve(__dirname, 'src/assets/images'),
+  '@assets': './src/assets',
+  '@images': './src/assets/images',
 };
 
 module.exports = config;
