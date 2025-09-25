@@ -407,7 +407,7 @@ const FirefighterHomeScreen = ({ navigation }) => {
   };
 
   const handleViewDetails = (incident) => {
-    navigation.navigate('FirefighterIncidents', { 
+    navigation.navigate('FirefighterIncidentDetails', { 
       incidentId: incident.id,
       incidentData: incident
     });

@@ -269,6 +269,12 @@ const DispatcherDashboard = () => {
           }}>
             <Ionicons name="refresh-outline" size={20} color="#007AFF" />
           </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.smartDashboardButton} 
+            onPress={() => navigation.navigate('SmartEmergencyDashboard')}
+          >
+            <Ionicons name="bulb-outline" size={20} color="#28A745" />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.logoutButton} onPress={async () => {
             try {
               await signOut();
@@ -332,6 +338,13 @@ const DispatcherDashboard = () => {
           >
             <Ionicons name="time" size={32} color="#FF9500" />
             <Text style={styles.actionText}>Incident History</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => navigation.navigate("SmartEmergencyDashboard")}
+          >
+            <Ionicons name="bulb-outline" size={32} color="#007BFF" />
+            <Text style={styles.actionText}>Smart Dashboard</Text>
           </TouchableOpacity>
         </View>
 
@@ -446,6 +459,12 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 6,
     backgroundColor: "#e3f2fd",
+  },
+  smartDashboardButton: {
+    padding: 8,
+    borderRadius: 6,
+    backgroundColor: "#d4edda",
+    marginHorizontal: 5,
   },
   logoutButton: {
     padding: 8,

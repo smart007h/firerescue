@@ -140,6 +140,23 @@ const FirefighterIncidentDetailsScreen =
   require("../screens/FirefighterIncidentDetailsScreen").default ||
   require("../screens/FirefighterIncidentDetailsScreen");
 
+// New Smart Features Screens
+const SmartEmergencyDashboard =
+  require("../screens/SmartEmergencyDashboard").default ||
+  require("../screens/SmartEmergencyDashboard");
+const SmartFeaturesDemo =
+  require("../screens/SmartFeaturesDemo").default ||
+  require("../screens/SmartFeaturesDemo");
+const SmartIncidentAnalysis =
+  require("../components/SmartIncidentAnalysis").default ||
+  require("../components/SmartIncidentAnalysis");
+const AREmergencyNavigation = 
+  require("../components/AREmergencyNavigation").default ||
+  require("../components/AREmergencyNavigation");
+const SimpleARNavigation =
+  require("../components/SimpleARNavigation").default ||
+  require("../components/SimpleARNavigation");
+
 // Services and contexts
 const { getCurrentUser, initializeAuth } = require("../services/auth");
 const { useAuth } = require("../context/AuthContext");
@@ -492,13 +509,43 @@ const FirefighterStack = () => (
 const DispatcherStack = () => (
   <Stack.Navigator 
     screenOptions={{ 
-      headerShown: false,
+      headerShown: true,
+      headerStyle: {
+        backgroundColor: '#007AFF',
+      },
+      headerTintColor: '#fff',
+      headerTitleStyle: {
+        fontWeight: 'bold',
+      },
       animation: 'slide_from_right',
     }}
   >
     <Stack.Screen
       name="DispatcherDashboard"
       component={DispatcherDashboard}
+      options={{ title: 'Dispatcher Dashboard' }}
+    />
+    <Stack.Screen
+      name="SmartEmergencyDashboard"
+      component={SmartEmergencyDashboard}
+      options={{
+        title: 'Smart Emergency Dashboard',
+      }}
+    />
+    <Stack.Screen
+      name="SmartFeaturesDemo"
+      component={SmartFeaturesDemo}
+      options={{ title: 'Smart Features Demo' }}
+    />
+    <Stack.Screen
+      name="SimpleARNavigation"
+      component={SimpleARNavigation}
+      options={{ title: 'AR Navigation' }}
+    />
+    <Stack.Screen
+      name="MenuScreen"
+      component={MenuScreen}
+      options={{ title: 'Menu' }}
     />
     <Stack.Screen
       name="DispatchTrackingScreen"
@@ -527,6 +574,14 @@ const DispatcherStack = () => (
     <Stack.Screen
       name="CallLogs"
       component={CallLogsScreen}
+    />
+    <Stack.Screen
+      name="SmartIncidentAnalysis"
+      component={SmartIncidentAnalysis}
+    />
+    <Stack.Screen
+      name="ARNavigation"
+      component={AREmergencyNavigation}
     />
   </Stack.Navigator>
 );

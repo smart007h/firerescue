@@ -91,7 +91,7 @@ const DispatcherLoginScreen = ({ navigation }) => {
       await AsyncStorage.setItem('userId', dispatcherData.id);
       await AsyncStorage.setItem('userEmail', dispatcherData.email);
 
-      // 5. Navigate to dispatcher dashboard
+      // 5. Navigate to classic dispatcher dashboard (primary workflow)
       navigation.replace('DispatcherDashboard');
     } catch (error) {
       console.error('Login error:', error);

@@ -12,9 +12,9 @@ import {
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-
 const VideoPlayer = ({ visible, videoUri, onClose, title = 'Video' }) => {
+  // Get screen dimensions safely inside the component
+  const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   
@@ -187,8 +187,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   videoContainer: {
-    width: screenWidth * 0.95,
-    height: screenHeight * 0.8,
+    width: '95%',
+    height: '80%',
     backgroundColor: '#000',
     borderRadius: 12,
     overflow: 'hidden',

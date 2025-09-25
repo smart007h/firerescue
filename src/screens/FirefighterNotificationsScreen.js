@@ -1024,35 +1024,6 @@ const FirefighterNotificationsScreen = () => {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Firefighter Notifications</Text>
-        {/* Temporary fix button for auth issues */}
-        <TouchableOpacity
-          style={{
-            position: 'absolute',
-            right: 16,
-            top: 16,
-            backgroundColor: '#FF6B6B',
-            padding: 8,
-            borderRadius: 6
-          }}
-          onPress={() => {
-            Alert.alert(
-              'Authentication Issue Detected',
-              'Your session has expired. You need to log out and log back in.\n\nThis will fix the booking update issue.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { 
-                  text: 'Logout & Fix', 
-                  onPress: handleAuthError,
-                  style: 'destructive'
-                }
-              ]
-            );
-          }}
-        >
-          <Text style={{ color: 'white', fontSize: 10, fontWeight: 'bold' }}>
-            FIX AUTH
-          </Text>
-        </TouchableOpacity>
       </View>
 
       {activeView === null ? (
