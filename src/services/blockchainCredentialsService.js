@@ -181,7 +181,8 @@ class BlockchainCredentialsService {
         certificate.certificateId,
         block.hash,
         transaction.id,
-        recipientData.id
+        recipientData.id,
+        'training'
       );
 
       return {
@@ -620,15 +621,18 @@ class BlockchainCredentialsService {
     }
   }
 
-  async storeCertificateReference(certificateId, blockHash, transactionId, recipientId) {
+  async storeCertificateReference(certificateId, blockHash, transactionId, recipientId, certificateType = 'training') {
     try {
       const { error } = await supabase
         .from('blockchain_certificates')
         .insert({
           certificate_id: certificateId,
+          certificate_type: certificateType,
           block_hash: blockHash,
           transaction_id: transactionId,
           recipient_id: recipientId,
+          issuer_organization: 'Fire Rescue Department',
+          certificate_data: { type: certificateType, issued_by: 'system' },
           created_at: new Date().toISOString()
         });
 

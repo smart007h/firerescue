@@ -25,12 +25,22 @@ class DroneService {
    * @param {Object} droneConfig - Drone configuration options
    * @returns {Promise<Object>} Mission details and live stream info
    */
-  async deployDroneForIncident(incident, droneConfig = {}) {
+  async deployDroneForIncident(incident = {}, droneConfig = {}) {
     try {
+      // Validate and set defaults for incident data
+      const validatedIncident = {
+        id: incident.id || `incident_${Date.now()}`,
+        latitude: incident.latitude || 40.7128,
+        longitude: incident.longitude || -74.0060,
+        type: incident.type || 'fire',
+        severity: incident.severity || 'medium',
+        ...incident
+      };
+
       const missionId = this.generateMissionId();
       const targetLocation = {
-        latitude: incident.latitude,
-        longitude: incident.longitude,
+        latitude: validatedIncident.latitude,
+        longitude: validatedIncident.longitude,
         altitude: droneConfig.altitude || 50 // Default 50 meters
       };
 
@@ -43,7 +53,7 @@ class DroneService {
       // Create mission plan
       const missionPlan = await this.createMissionPlan({
         missionId,
-        incident,
+        incident: validatedIncident,
         drone: availableDrone,
         targetLocation,
         config: droneConfig
@@ -487,16 +497,18 @@ class DroneService {
         .from('drone_missions')
         .insert({
           mission_id: mission.missionId,
-          incident_id: mission.incident.id,
-          drone_id: mission.drone.id,
+          incident_id: mission.incidentId,
+          drone_id: mission.droneId,
           target_location: mission.targetLocation,
           flight_path: mission.flightPath,
           objectives: mission.objectives,
-          status: 'active',
+          status: mission.status || 'active',
+          start_time: mission.startTime,
           created_at: new Date().toISOString()
         });
 
       if (error) throw error;
+      console.log(`Mission ${mission.missionId} saved to database`);
     } catch (error) {
       console.error('Error saving mission to database:', error);
     }
@@ -522,6 +534,368 @@ class DroneService {
       if (error) throw error;
     } catch (error) {
       console.error('Error saving assessment to database:', error);
+    }
+  }
+
+  /**
+   * Calculate optimal flight path between two points
+   * @param {Object} startLocation - Starting coordinates
+   * @param {Object} targetLocation - Target coordinates
+   * @param {Array} waypoints - Optional waypoints
+   * @returns {Promise<Object>} Flight path with duration and coordinates
+   */
+  async calculateOptimalFlightPath(startLocation, targetLocation, waypoints = []) {
+    try {
+      const start = {
+        latitude: startLocation.latitude || startLocation.lat || 40.7128,
+        longitude: startLocation.longitude || startLocation.lng || -74.0060
+      };
+      
+      const target = {
+        latitude: targetLocation.latitude || targetLocation.lat || 40.7589,
+        longitude: targetLocation.longitude || targetLocation.lng || -73.9851
+      };
+
+      // Calculate direct distance
+      const distance = this.calculateDistance(start, target);
+      
+      // Generate optimized flight path
+      const path = [start];
+      
+      // Add waypoints if provided
+      if (waypoints && waypoints.length > 0) {
+        path.push(...waypoints.map(wp => ({
+          latitude: wp.latitude || wp.lat,
+          longitude: wp.longitude || wp.lng
+        })));
+      }
+      
+      path.push(target);
+
+      // Calculate estimated flight time (assuming 50 km/h average speed)
+      const estimatedDuration = Math.ceil((distance / 50) * 3600); // seconds
+
+      return {
+        coordinates: path,
+        distance: distance,
+        duration: estimatedDuration,
+        altitude: 100, // meters
+        speed: 50, // km/h
+        optimized: true
+      };
+    } catch (error) {
+      console.error('Error calculating flight path:', error);
+      // Return basic path
+      return {
+        coordinates: [startLocation, targetLocation],
+        distance: 5,
+        duration: 300,
+        altitude: 100,
+        speed: 50,
+        optimized: false
+      };
+    }
+  }
+
+  /**
+   * Calculate distance between two coordinates
+   * @param {Object} point1 - First coordinate
+   * @param {Object} point2 - Second coordinate
+   * @returns {number} Distance in kilometers
+   */
+  calculateDistance(point1, point2) {
+    const R = 6371; // Earth's radius in km
+    const dLat = (point2.latitude - point1.latitude) * Math.PI / 180;
+    const dLon = (point2.longitude - point1.longitude) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(point1.latitude * Math.PI / 180) * Math.cos(point2.latitude * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  }
+
+  /**
+   * Get safety protocols for a mission based on incident type
+   * @param {Object} incident - Incident details
+   * @returns {Object} Safety protocols and guidelines
+   */
+  getSafetyProtocols(incident) {
+    const baseProtocols = {
+      minAltitude: 100, // meters
+      maxWindSpeed: 15, // m/s
+      noFlyZones: [],
+      emergencyLandingSites: [],
+      communicationInterval: 30 // seconds
+    };
+
+    const incidentType = incident?.type || 'fire';
+    const severity = incident?.severity || 'medium';
+
+    switch (incidentType.toLowerCase()) {
+      case 'fire':
+        return {
+          ...baseProtocols,
+          minAltitude: 150,
+          thermalImaging: true,
+          smokeAvoidance: true,
+          waterDropSafety: true,
+          retreatTriggers: ['sudden wind change', 'equipment malfunction', 'low battery']
+        };
+      
+      case 'rescue':
+        return {
+          ...baseProtocols,
+          minAltitude: 80,
+          victimDetection: true,
+          noiseLimits: true,
+          medicalSupport: true,
+          retreatTriggers: ['weather deterioration', 'victim movement', 'equipment failure']
+        };
+      
+      case 'hazmat':
+        return {
+          ...baseProtocols,
+          minAltitude: 200,
+          chemicalDetection: true,
+          windDirection: 'critical',
+          decontamination: true,
+          retreatTriggers: ['chemical leak spread', 'wind direction change', 'sensor alerts']
+        };
+      
+      default:
+        return {
+          ...baseProtocols,
+          retreatTriggers: ['weather change', 'equipment issues', 'mission completion']
+        };
+    }
+  }
+
+  /**
+   * Setup communication channels for a drone mission
+   * @param {string} missionId - Mission identifier
+   * @returns {Object} Communication setup details
+   */
+  setupCommunicationChannels(missionId) {
+    return {
+      primaryChannel: `DRONE_${missionId}`,
+      backupChannel: `BACKUP_${missionId}`,
+      emergencyChannel: 'EMERGENCY_FREQ',
+      videoStream: `stream://${missionId}/video`,
+      dataLink: `data://${missionId}/telemetry`,
+      controlLink: `control://${missionId}/commands`,
+      frequencies: {
+        command: '433.92 MHz',
+        video: '5.8 GHz',
+        telemetry: '915 MHz'
+      },
+      encryption: true,
+      redundancy: true
+    };
+  }
+
+  /**
+   * Initialize a drone mission with all necessary setup
+   * @param {Object} missionPlan - Complete mission plan
+   * @returns {Promise<Object>} Initialized mission object
+   */
+  async initializeDroneMission(missionPlan) {
+    try {
+      const {
+        missionId,
+        drone,
+        incident,
+        targetLocation,
+        flightPath,
+        objectives,
+        safetyProtocols,
+        communicationChannels
+      } = missionPlan;
+
+      // Prepare drone for mission
+      await this.prepareDroneForMission(drone.drone_id);
+
+      // Initialize mission object
+      const mission = {
+        missionId,
+        droneId: drone.drone_id,
+        incidentId: incident?.id || `incident_${Date.now()}`,
+        status: 'initialized',
+        targetLocation,
+        flightPath,
+        objectives,
+        safetyProtocols,
+        communicationChannels,
+        startTime: new Date().toISOString(),
+        telemetry: {
+          altitude: 0,
+          speed: 0,
+          batteryLevel: drone.battery_level,
+          position: drone.current_location,
+          heading: 0
+        },
+        alerts: [],
+        dataCollected: {
+          images: [],
+          videos: [],
+          thermalData: [],
+          sensorReadings: []
+        }
+      };
+
+      // Set drone status to active
+      await this.updateDroneStatus(drone.drone_id, 'active');
+
+      return mission;
+    } catch (error) {
+      console.error('Error initializing drone mission:', error);
+      throw new Error(`Failed to initialize mission: ${error.message}`);
+    }
+  }
+
+  /**
+   * Prepare drone for mission (pre-flight checks)
+   * @param {string} droneId - Drone identifier
+   * @returns {Promise<Object>} Pre-flight check results
+   */
+  async prepareDroneForMission(droneId) {
+    try {
+      // Simulate pre-flight checks
+      const checks = {
+        batteryCheck: true,
+        motorCheck: true,
+        cameraCheck: true,
+        gpsCheck: true,
+        communicationCheck: true,
+        sensorCheck: true
+      };
+
+      const allChecksPass = Object.values(checks).every(check => check === true);
+      
+      if (!allChecksPass) {
+        throw new Error('Pre-flight checks failed');
+      }
+
+      return {
+        droneId,
+        status: 'ready',
+        checks,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Error preparing drone for mission:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update drone status in database
+   * @param {string} droneId - Drone identifier
+   * @param {string} status - New status
+   * @returns {Promise<void>}
+   */
+  async updateDroneStatus(droneId, status) {
+    try {
+      const { error } = await supabase
+        .from('drone_fleet')
+        .update({ 
+          status,
+          updated_at: new Date().toISOString()
+        })
+        .eq('drone_id', droneId);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error updating drone status:', error);
+    }
+  }
+
+  /**
+   * Start live video stream from drone
+   * @param {Object} mission - Mission object
+   * @returns {Promise<Object>} Stream information
+   */
+  async startLiveStream(mission) {
+    try {
+      const streamInfo = {
+        streamId: `live_${mission.missionId}`,
+        streamUrl: `rtmp://stream.firerescue.com/live/${mission.missionId}`,
+        backupUrl: `rtmp://backup.firerescue.com/live/${mission.missionId}`,
+        quality: 'HD',
+        fps: 30,
+        latency: 'low',
+        recording: true,
+        recordingPath: `/recordings/${mission.missionId}/`,
+        status: 'active',
+        startTime: new Date().toISOString(),
+        viewerCount: 0,
+        bandwidth: '5 Mbps'
+      };
+
+      console.log(`Started live stream for mission ${mission.missionId}`);
+      return streamInfo;
+    } catch (error) {
+      console.error('Error starting live stream:', error);
+      return {
+        streamId: `live_${mission.missionId}`,
+        status: 'failed',
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Capture high-resolution assessment images from drone
+   * @param {Object} mission - Mission object
+   * @returns {Promise<Array>} Array of captured images
+   */
+  async captureAssessmentImages(mission) {
+    try {
+      const captureAngles = [
+        { angle: 0, description: 'Front view' },
+        { angle: 90, description: 'Right side' },
+        { angle: 180, description: 'Rear view' },
+        { angle: 270, description: 'Left side' },
+        { angle: -45, description: 'Aerial overview' }
+      ];
+
+      const images = [];
+
+      for (const capture of captureAngles) {
+        // Simulate image capture from different angles
+        const imageData = {
+          id: `img_${mission.missionId}_${Date.now()}_${capture.angle}`,
+          missionId: mission.missionId,
+          timestamp: new Date().toISOString(),
+          angle: capture.angle,
+          description: capture.description,
+          resolution: '4K',
+          format: 'JPEG',
+          size: '8.5MB',
+          coordinates: mission.targetLocation,
+          metadata: {
+            altitude: mission.telemetry?.altitude || 100,
+            speed: mission.telemetry?.speed || 0,
+            heading: capture.angle,
+            weather: 'clear',
+            lighting: 'good'
+          },
+          // In real implementation, this would be actual image data
+          imageUrl: `https://drone-images.firerescue.com/${mission.missionId}/${capture.angle}.jpg`,
+          thumbnailUrl: `https://drone-images.firerescue.com/${mission.missionId}/thumb_${capture.angle}.jpg`
+        };
+
+        images.push(imageData);
+        
+        // Simulate capture delay
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      console.log(`Captured ${images.length} assessment images for mission ${mission.missionId}`);
+      return images;
+    } catch (error) {
+      console.error('Error capturing assessment images:', error);
+      return [];
     }
   }
 

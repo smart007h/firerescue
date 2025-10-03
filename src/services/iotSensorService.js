@@ -624,6 +624,18 @@ class IoTSensorService {
 
   async saveAlertToDatabase(alert) {  
     try {
+      // First ensure the sensor exists in the database
+      const { data: existingSensor, error: sensorError } = await supabase
+        .from('iot_sensors')
+        .select('sensor_id')
+        .eq('sensor_id', alert.sensorId)
+        .single();
+
+      // If sensor doesn't exist, create it first
+      if (sensorError || !existingSensor) {
+        await this.createSensorRecord(alert.sensorId, alert.sensorType);
+      }
+
       const { error } = await supabase
         .from('iot_alerts')
         .insert({
@@ -829,6 +841,136 @@ class IoTSensorService {
                connectivity > 0.6 && freshness > 0.6 ? 'good' : 
                connectivity > 0.4 && freshness > 0.4 ? 'fair' : 'poor'
     };
+  }
+
+  /**
+   * Initialize predictive analytics for IoT data
+   * @returns {Promise<void>}
+   */
+  async initializePredicttiveAnalytics() {
+    try {
+      console.log('Initializing IoT predictive analytics...');
+      // Set up machine learning models for anomaly detection
+      // This is a placeholder for actual ML implementation
+      return { status: 'initialized', models: ['anomaly_detection', 'pattern_recognition'] };
+    } catch (error) {
+      console.error('Error initializing predictive analytics:', error);
+    }
+  }
+
+  /**
+   * Update sensor database with new data
+   * @param {string} sensorId - Sensor identifier
+   * @param {Object} data - Sensor data to update
+   * @returns {Promise<void>}
+   */
+  async updateSensorDatabase(sensorId, data = {}) {
+    try {
+      // Provide default data if not provided
+      const sensorData = {
+        type: data.type || 'reading',
+        value: data.value || 0,
+        unit: data.unit || 'units',
+        quality: data.quality || 1.0,
+        ...data
+      };
+
+      const { error } = await supabase
+        .from('iot_sensor_data')
+        .insert({
+          sensor_id: sensorId,
+          data_type: sensorData.type,
+          value: sensorData.value,
+          unit: sensorData.unit,
+          quality_score: sensorData.quality,
+          timestamp: new Date().toISOString()
+        });
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error updating sensor database:', error);
+    }
+  }
+
+  /**
+   * Create a sensor record in the database
+   * @param {string} sensorId - Sensor identifier
+   * @param {string} sensorType - Type of sensor
+   * @returns {Promise<void>}
+   */
+  async createSensorRecord(sensorId, sensorType) {
+    try {
+      const { error } = await supabase
+        .from('iot_sensors')
+        .insert({
+          sensor_id: sensorId,
+          sensor_type: sensorType,
+          location: { latitude: 40.7128, longitude: -74.0060, floor: 1, room: 'demo' },
+          protocol: 'wifi',
+          status: 'active',
+          battery_level: 85,
+          capabilities: { range: 100, precision: 0.1 },
+          last_heartbeat: new Date().toISOString()
+        });
+
+      if (error) throw error;
+      console.log(`Created sensor record for ${sensorId}`);
+    } catch (error) {
+      console.error('Error creating sensor record:', error);
+    }
+  }
+
+  /**
+   * Assess overall network health
+   * @returns {Promise<Object>} Network health metrics
+   */
+  async assessNetworkHealth() {
+    try {
+      // Get all sensors from database
+      const { data: sensors, error } = await supabase
+        .from('iot_sensors')
+        .select('*');
+
+      if (error) throw error;
+
+      const totalSensors = sensors?.length || 0;
+      const activeSensors = sensors?.filter(s => s.status === 'active').length || 0;
+      const batteryLevels = sensors?.map(s => s.battery_level).filter(b => b != null) || [];
+      const avgBattery = batteryLevels.length > 0 ? 
+        batteryLevels.reduce((a, b) => a + b, 0) / batteryLevels.length : 0;
+
+      // Calculate recent heartbeats (last 5 minutes)
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      const recentHeartbeats = sensors?.filter(s => 
+        s.last_heartbeat && new Date(s.last_heartbeat) > fiveMinutesAgo
+      ).length || 0;
+
+      const connectivity = totalSensors > 0 ? (recentHeartbeats / totalSensors) : 0;
+      const availability = totalSensors > 0 ? (activeSensors / totalSensors) : 0;
+
+      return {
+        totalSensors,
+        activeSensors,
+        connectivity: Math.round(connectivity * 100),
+        availability: Math.round(availability * 100),
+        avgBatteryLevel: Math.round(avgBattery),
+        status: connectivity > 0.8 && availability > 0.8 ? 'excellent' :
+                connectivity > 0.6 && availability > 0.6 ? 'good' :
+                connectivity > 0.4 && availability > 0.4 ? 'fair' : 'poor',
+        lastUpdated: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Error assessing network health:', error);
+      return {
+        totalSensors: 0,
+        activeSensors: 0,
+        connectivity: 0,
+        availability: 0,
+        avgBatteryLevel: 0,
+        status: 'unknown',
+        lastUpdated: new Date().toISOString()
+      };
+    }
   }
 }
 
